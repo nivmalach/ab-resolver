@@ -31,16 +31,17 @@ app.use((req, res, next) => {
 });
 
 // --- TEMP in-memory experiment store (Phase 2: move to Postgres) ---
-// Replace the placeholder domain/paths with your real ones.
+// Use baseline_url and test_url as the source of truth for matching.
 let experiments = [
   {
     id: "exp_lp_001",
     name: "Landing Page A/B (baseline vs test)",
-    domain: "opsotools.com",         // e.g., "example.com" (no protocol)
-    path_pattern: "/landing-pages/lp1",     // exact path of the baseline page, e.g., "/landing-1"
+    // domain/path_pattern kept only for reference; matching uses baseline_url/test_url
+    domain: "opsotools.com",
+    path_pattern: "/landing-pages/lp1",
     baseline_url: "https://opsotools.com/landing-pages/lp1",
     test_url:     "https://opsotools.com/landing-pages/lp2/",
-    allocation_b: 0.5,                  // traffic to test (B)
+    allocation_b: 0.5,                  // traffic share to test (B)
     status: "running",                  // draft | running | paused | stopped
     preserve_params: true,              // keep GCLID/UTMs/hash on redirect
     start_at: null,                     // ISO string or null
@@ -48,25 +49,39 @@ let experiments = [
   }
 ];
 
-// Exact matcher for MVP (domain + exact path)
+// Treat BOTH baseline and test URLs as part of the experiment surface
 function matchesSurface(urlStr, exp) {
   const u = new URL(urlStr);
-  if (u.hostname !== exp.domain) return false;
+  const base = new URL(exp.baseline_url);
+  const test = new URL(exp.test_url);
+
+  // host must match either baseline or test host
+  if (u.hostname !== base.hostname && u.hostname !== test.hostname) return false;
+
   const clean = (p) => p.replace(/\/$/, "");
-  return clean(u.pathname) === clean(exp.path_pattern);
+  const uPath    = clean(u.pathname);
+  const basePath = clean(base.pathname);
+  const testPath = clean(test.pathname);
+
+  return uPath === basePath || uPath === testPath;
 }
 
 // Deterministic assignment based on cid (GA client hint) + experiment id
 function assignVariant({ cid, id, allocation_b }) {
   const seed = (cid || crypto.randomUUID()) + id;
-  const h = crypto.createHash("sha256").update(seed).digest();
-  const r = h[0] / 255; // 0..1
-  return r < (allocation_b ?? 0.5) ? "B" : "A";
+  const hash = crypto.createHash("sha256").update(seed).digest();
+  // Use first 4 bytes as an unsigned 32-bit integer for a uniform 0..1 float
+  const n = (hash[0] << 24) | (hash[1] << 16) | (hash[2] << 8) | hash[3];
+  // Convert to unsigned and normalize
+  const u32 = (n >>> 0); // 0..4294967295
+  const r = u32 / 4294967296; // 0..~1
+  return r < (allocation_b == null ? 0.5 : allocation_b) ? "B" : "A";
 }
 
 // Health check
 app.get("/healthz", (_, res) => res.json({ ok: true }));
 
+// /exp/resolve: A request is considered active if it is on either the baseline or test URL of any running experiment.
 // Main resolver
 app.post("/exp/resolve", (req, res) => {
   try {
