@@ -1,0 +1,34 @@
+{
+  "name": "ab-resolver",
+  "version": "0.1.0",
+  "description": "A Node.js service for URL-vs-URL A/B testing with GTM integration",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nivmalach/ab-resolver.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nivmalach/ab-resolver/issues"
+  },
+  "homepage": "https://github.com/nivmalach/ab-resolver#readme",
+  "keywords": [
+    "ab-testing",
+    "experimentation",
+    "gtm",
+    "express"
+  ]
+}
