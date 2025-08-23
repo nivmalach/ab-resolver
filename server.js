@@ -4,9 +4,17 @@
 
 const express = require("express");
 const crypto  = require("crypto");
+const { Pool } = require('pg');
+const path = require("path");
+const cookieParser = require("cookie-parser");
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ""; // set on Render
+const SESSION_SECRET = process.env.SESSION_SECRET || ADMIN_TOKEN || "change-me";
+const DATABASE_URL = process.env.DATABASE_URL || null;
+const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } }) : null;
 
 const app = express();
 app.use(express.json());
+app.use(cookieParser(SESSION_SECRET));
 
 // --- CORS (allow your site to call this endpoint from the browser) ---
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
@@ -30,24 +38,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// --- TEMP in-memory experiment store (Phase 2: move to Postgres) ---
-// Use baseline_url and test_url as the source of truth for matching.
-let experiments = [
-  {
-    id: "exp_lp_001",
-    name: "Landing Page A/B (baseline vs test)",
-    // domain/path_pattern kept only for reference; matching uses baseline_url/test_url
-    domain: "opsotools.com",
-    path_pattern: "/landing-pages/lp1",
-    baseline_url: "https://opsotools.com/landing-pages/lp1",
-    test_url:     "https://opsotools.com/landing-pages/lp2/",
-    allocation_b: 0.5,                  // traffic share to test (B)
-    status: "running",                  // draft | running | paused | stopped
-    preserve_params: true,              // keep GCLID/UTMs/hash on redirect
-    start_at: null,                     // ISO string or null
-    stop_at:  null
-  }
-];
+// --- Experiments storage ---
+// Primary: Postgres (via DATABASE_URL). Fallback: in-memory array (empty by default).
+// Manage experiments via the API below; do not hardcode here.
+let experiments = [];
 
 // Treat BOTH baseline and test URLs as part of the experiment surface
 function matchesSurface(urlStr, exp) {
@@ -65,6 +59,181 @@ function matchesSurface(urlStr, exp) {
 
   return uPath === basePath || uPath === testPath;
 }
+
+// --- DB helpers ---
+async function dbQuery(text, params){
+  if (!pool) return { rows: [] };
+  const client = await pool.connect();
+  try { return await client.query(text, params); }
+  finally { client.release(); }
+}
+
+async function loadActiveExperimentsFromDB(){
+  if (!pool) return [];
+  const now = new Date();
+  const { rows } = await dbQuery(
+    `SELECT id, name, baseline_url, test_url, allocation_b, status, preserve_params, start_at, stop_at
+       FROM experiments
+      WHERE status = 'running'
+        AND (start_at IS NULL OR start_at <= NOW())
+        AND (stop_at  IS NULL OR stop_at  >= NOW())`,
+    []
+  );
+  return rows || [];
+}
+
+async function findActiveExperimentForUrl(urlStr){
+  // Prefer DB; fallback to in-memory array if DB not configured
+  const list = pool ? await loadActiveExperimentsFromDB() : experiments;
+  for (const e of list){
+    // shape-normalize fields from DB (snake_case already matches)
+    const exp = {
+      id: e.id,
+      name: e.name,
+      baseline_url: e.baseline_url,
+      test_url: e.test_url,
+      allocation_b: e.allocation_b != null ? Number(e.allocation_b) : 0.5,
+      status: e.status,
+      preserve_params: (e.preserve_params !== false),
+      start_at: e.start_at,
+      stop_at: e.stop_at
+    };
+    try { if (matchesSurface(urlStr, exp)) return exp; } catch(_){}
+  }
+  return null;
+}
+
+// --- Admin UI routes ---
+app.get('/admin/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'admin', 'login.html'));
+});
+
+app.post('/admin/login', express.urlencoded({ extended: true }), (req, res) => {
+  if (!ADMIN_TOKEN || req.body.password === ADMIN_TOKEN) {
+    res.cookie('admin_session', 'yes', {
+      httpOnly: true,
+      signed: true,
+      sameSite: 'lax',
+      secure: true,
+    });
+    return res.redirect('/admin');
+  }
+  res.status(401).send('Invalid password');
+});
+
+app.get('/admin/logout', (req, res) => {
+  res.clearCookie('admin_session');
+  res.redirect('/admin/login');
+});
+
+// Protect /admin assets with cookie session (or open if no ADMIN_TOKEN)
+app.use('/admin', (req, res, next) => {
+  if (!ADMIN_TOKEN) return next();
+  if (req.path === '/login') return next();
+  if (req.signedCookies && req.signedCookies.admin_session === 'yes') return next();
+  return res.redirect('/admin/login');
+});
+
+// Serve static admin dashboard files
+app.use('/admin', express.static(path.join(__dirname, 'admin')));
+
+// --- Admin auth: allow either Bearer token or signed cookie session ---
+function requireAdmin(req, res, next){
+  const token = ADMIN_TOKEN;
+  if (!token) return next(); // if not set, allow everything (MVP)
+  const hasCookie = req.signedCookies && req.signedCookies.admin_session === 'yes';
+  const auth = req.headers['authorization'] || '';
+  const hasBearer = auth === `Bearer ${token}`;
+  if (hasCookie || hasBearer) return next();
+  // If the client expects HTML, redirect to login; otherwise JSON 401
+  if ((req.headers.accept || '').includes('text/html')) return res.redirect('/admin/login');
+  return res.status(401).json({ error: 'unauthorized' });
+}
+
+// --- Experiments CRUD API ---
+// Create
+app.post('/experiments', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!pool) return res.status(501).json({ error: 'db_not_configured' });
+    const q = `INSERT INTO experiments
+      (id, name, baseline_url, test_url, allocation_b, status, preserve_params, start_at, stop_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      RETURNING *`;
+    const params = [
+      b.id, b.name, b.baseline_url, b.test_url,
+      b.allocation_b ?? 0.5,
+      b.status ?? 'draft',
+      b.preserve_params ?? true,
+      b.start_at ?? null,
+      b.stop_at ?? null
+    ];
+    const { rows } = await dbQuery(q, params);
+    res.json(rows[0]);
+  } catch (e) { res.status(400).json({ error: 'bad_request', detail: String(e) }); }
+});
+
+// List
+app.get('/experiments', requireAdmin, async (_req, res) => {
+  try {
+    if (!pool) return res.json(experiments);
+    const { rows } = await dbQuery(`SELECT * FROM experiments ORDER BY created_at DESC NULLS LAST, id`, []);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: 'server_error' }); }
+});
+
+// Update (PATCH)
+app.patch('/experiments/:id', requireAdmin, async (req, res) => {
+  try {
+    if (!pool) return res.status(501).json({ error: 'db_not_configured' });
+    const id = req.params.id;
+    const b = req.body || {};
+    const fields = [];
+    const vals = [];
+    let idx = 1;
+    for (const [k,v] of Object.entries(b)){
+      fields.push(`${k} = $${idx++}`); vals.push(v);
+    }
+    if (!fields.length) return res.status(400).json({ error: 'no_fields' });
+    vals.push(id);
+    const { rows } = await dbQuery(`UPDATE experiments SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`, vals);
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+    res.json(rows[0]);
+  } catch (e) { res.status(400).json({ error: 'bad_request', detail: String(e) }); }
+});
+
+// Delete
+app.delete('/experiments/:id', requireAdmin, async (req, res) => {
+  try {
+    if (!pool) return res.status(501).json({ error: 'db_not_configured' });
+    const id = req.params.id;
+    await dbQuery(`DELETE FROM experiments WHERE id = $1`, [id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ error: 'bad_request', detail: String(e) }); }
+});
+
+// Status helpers
+app.post('/experiments/:id/start', requireAdmin, async (req,res)=>{
+  if (!pool) return res.status(501).json({ error: 'db_not_configured' });
+  const id = req.params.id;
+  const { rows } = await dbQuery(`UPDATE experiments SET status='running' WHERE id=$1 RETURNING *`, [id]);
+  if (!rows.length) return res.status(404).json({ error: 'not_found' });
+  res.json(rows[0]);
+});
+app.post('/experiments/:id/pause', requireAdmin, async (req,res)=>{
+  if (!pool) return res.status(501).json({ error: 'db_not_configured' });
+  const id = req.params.id;
+  const { rows } = await dbQuery(`UPDATE experiments SET status='paused' WHERE id=$1 RETURNING *`, [id]);
+  if (!rows.length) return res.status(404).json({ error: 'not_found' });
+  res.json(rows[0]);
+});
+app.post('/experiments/:id/stop', requireAdmin, async (req,res)=>{
+  if (!pool) return res.status(501).json({ error: 'db_not_configured' });
+  const id = req.params.id;
+  const { rows } = await dbQuery(`UPDATE experiments SET status='stopped' WHERE id=$1 RETURNING *`, [id]);
+  if (!rows.length) return res.status(404).json({ error: 'not_found' });
+  res.json(rows[0]);
+});
 
 // Deterministic assignment based on cid (GA client hint) + experiment id
 function assignVariant({ cid, id, allocation_b }) {
@@ -109,17 +278,10 @@ function assignVariantFromRequest(req, exp) {
 // --- Blocking JS endpoint (VWO-style)
 // Emits minimal JS that: (1) sets sticky cookie, (2) redirects baseline→test if B,
 // (3) pushes exp_exposure to dataLayer, (4) unhides the page (removes ab-hide)
-app.get('/exp/resolve.js', (req, res) => {
+app.get('/exp/resolve.js', async (req, res) => {
   try {
     const pageUrl = req.query.url || req.get('referer') || '';
-    const now = new Date();
-
-    const exp = experiments.find(e =>
-      e.status === 'running' &&
-      (!e.start_at || new Date(e.start_at) <= now) &&
-      (!e.stop_at  || new Date(e.stop_at)  >= now) &&
-      (pageUrl ? matchesSurface(pageUrl, e) : true)
-    );
+    const exp = pageUrl ? await findActiveExperimentForUrl(pageUrl) : null;
 
     res.set('Content-Type', 'application/javascript');
     res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
@@ -156,18 +318,12 @@ app.get('/exp/resolve.js', (req, res) => {
 
 // /exp/resolve: A request is considered active if it is on either the baseline or test URL of any running experiment.
 // Main resolver
-app.post("/exp/resolve", (req, res) => {
+app.post("/exp/resolve", async (req, res) => {
   try {
     const { url, cid, force } = req.body || {};
     if (!url) return res.status(400).json({ active: false, error: "missing url" });
 
-    const now = new Date();
-    const exp = experiments.find(e =>
-      e.status === "running" &&
-      (!e.start_at || new Date(e.start_at) <= now) &&
-      (!e.stop_at  || new Date(e.stop_at)  >= now) &&
-      matchesSurface(url, e)
-    );
+    const exp = await findActiveExperimentForUrl(url);
 
     if (!exp) return res.json({ active: false });
 
