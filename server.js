@@ -344,29 +344,17 @@ function assignVariantFromRequest(req, exp) {
     // Default allocation is 50/50
     const allocation = exp.allocation_b == null ? 0.5 : Number(exp.allocation_b);
     
-    // Generate deterministic seed from request
-    const ip = (req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.ip || '').toString();
-    const ua = (req.headers['user-agent'] || '').toString();
-    const timestamp = Date.now().toString();
-    const randomSalt = crypto.randomBytes(8).toString('hex');
-    const seed = [ip, ua, exp.id, timestamp, randomSalt].join('|');
-    
-    // Generate hash and convert to float
-    const hash = crypto.createHash('sha256').update(seed).digest();
-    const n = (hash[0] << 24) | (hash[1] << 16) | (hash[2] << 8) | hash[3];
-    const u32 = n >>> 0;
-    const r = u32 / 0xFFFFFFFF; // Normalize to 0..1
+    // Generate random number for this request
+    const random = Math.random(); // Simple and truly random
     
     // Log assignment for debugging
     console.log('Server variant assignment:', {
-      ip: ip.split('.')[0] + '.x.x.x', // Log first octet only
-      timestamp,
       allocation,
-      random: r,
-      variant: r < allocation ? 'B' : 'A'
+      random,
+      variant: random < allocation ? 'B' : 'A'
     });
     
-    return r < allocation ? 'B' : 'A';
+    return random < allocation ? 'B' : 'A';
   } catch (e) {
     console.error('Error in variant assignment:', e);
     return 'A';
@@ -396,14 +384,14 @@ app.get('/exp/resolve.js', async (req, res) => {
     const js =
       "!function(){try{var i='"+jsString(exp.id)+"',b=new URL('"+jsString(exp.baseline_url)+"'),t=new URL('"+jsString(exp.test_url)+"'),h=new URL(location.href)," +
       "C=function(n,v,d){var x=new Date;x.setTime(x.getTime()+864e5*d),document.cookie=n+'='+v+'; Path=/; Expires='+x.toUTCString()+'; SameSite=Lax'}," +
-      "S=function(u){try{return(typeof u==='string'?new URL(u):u).pathname.replace(/\\\\$/,'')}catch(e){console.error('[AB Test] Invalid URL:',u,e);return''}}," +
-      "P=function(a,b){try{var p1=S(a),p2=S(b);console.log('[AB Test] Comparing paths:',{p1,p2,match:p1===p2});return p1===p2}catch(e){console.error('[AB Test] Path comparison error:',e);return false}}," +
-      "D=function(m,o){console.log('[AB Test]',m,Object.assign({id:i,variant:v,current:h.toString(),baseline:b.toString(),test:t.toString()},o))};" +
+      "S=function(u){try{var p=(typeof u==='string'?new URL(u):u).pathname;return p.endsWith('/')?p.slice(0,-1):p}catch(e){console.error('[AB Test] Invalid URL:',u,e);return''}}," +
+      "P=function(a,b){try{var p1=S(a),p2=S(b);var match=p1===p2;console.log('[AB Test] Comparing paths:',{p1,p2,match,raw1:a.pathname,raw2:b.pathname});return match}catch(e){console.error('[AB Test] Path comparison error:',e);return false}}," +
+      "D=function(m,o){console.log('[AB Test]',m,Object.assign({id:i,variant:v,current:h.pathname,baseline:b.pathname,test:t.pathname},o))};" +
       // QA override via URL (?__exp=forceA|forceB)
       "var fm=location.search.match(/__exp=(forceA|forceB)/),F=fm?fm[1].slice(-1):'',ck='expvar_'+i,m=document.cookie.match(new RegExp('(?:^|; )'+ck+'=(A|B)')),v=m?m[1]:null;" +
-      "v=(F==='A'||F==='B')?F:(v||'"+jsString(sv)+"');C(ck,v,90);D('Init',{isBaseline:P(h,b)});" +
+      "v=(F==='A'||F==='B')?F:(v||'"+jsString(sv)+"');C(ck,v,90);D('Init');" +
       // redirect if needed
-      "if(v==='B'){D('Checking redirect',{onBaseline:P(h,b)});if(P(h,b)){D('Redirecting');t.search=h.search||'';t.hash=h.hash||'';location.replace(t.toString());return}}" +
+      "if(v==='B'){var isBase=P(h,b);D('Checking redirect',{onBaseline:isBase});if(isBase){D('Redirecting to test');t.search=h.search||'';t.hash=h.hash||'';location.replace(t.toString());return}}" +
       // exposure → dataLayer
       "window.dataLayer=window.dataLayer||[];window.dataLayer.push({event:'exp_exposure',experiment_id:i,variant_id:v});" +
       "}catch(e){console.error('[AB Test] Error:',e)}finally{document.documentElement.classList.remove('ab-hide')}}();";
