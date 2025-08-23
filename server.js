@@ -24,18 +24,47 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  // If you set ALLOWED_ORIGINS, echo back only if it's allowed; otherwise allow all (MVP/dev).
-  const allowAll = ALLOWED_ORIGINS.length === 0;
-  if (allowAll) {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-  } else if (origin && ALLOWED_ORIGINS.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
-  }
-  res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  if (req.method === "OPTIONS") return res.status(204).end();
-  next();
+  
+  // If ALLOWED_ORIGINS is empty or if the origin matches an experiment URL, allow it
+  const isAllowedOrigin = async () => {
+    // If no ALLOWED_ORIGINS set, allow all in dev mode
+    if (ALLOWED_ORIGINS.length === 0) return true;
+    
+    // Check if origin is in ALLOWED_ORIGINS
+    if (origin && ALLOWED_ORIGINS.includes(origin)) return true;
+    
+    // Check if origin matches any active experiment URLs
+    if (origin) {
+      try {
+        const originUrl = new URL(origin);
+        const experiments = pool ? await loadActiveExperimentsFromDB() : experiments;
+        return experiments.some(exp => {
+          try {
+            const baselineHost = new URL(exp.baseline_url).hostname;
+            const testHost = new URL(exp.test_url).hostname;
+            return originUrl.hostname === baselineHost || originUrl.hostname === testHost;
+          } catch (e) {
+            return false;
+          }
+        });
+      } catch (e) {
+        return false;
+      }
+    }
+    return false;
+  };
+
+  // Set CORS headers based on origin check
+  isAllowedOrigin().then(allowed => {
+    if (allowed) {
+      res.setHeader("Access-Control-Allow-Origin", origin || "*");
+      if (origin) res.setHeader("Vary", "Origin");
+    }
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") return res.status(204).end();
+    next();
+  }).catch(() => next());
 });
 
 // --- Experiments storage ---

@@ -8,6 +8,7 @@ Your GTM bootstrap calls **POST `/exp/resolve`** to get the active experiment an
 ### Prerequisites
 - Node.js >= 18
 - npm or yarn
+- PostgreSQL database (optional, falls back to in-memory storage)
 
 ### Installation
 1. Clone the repository:
@@ -23,14 +24,41 @@ Your GTM bootstrap calls **POST `/exp/resolve`** to get the active experiment an
    yarn install
    ```
 
-3. Start the server:
+3. Set up environment variables:
+   ```bash
+   # Required for admin access (change in production)
+   ADMIN_TOKEN=your-secure-token
+   
+   # Optional: PostgreSQL connection string
+   DATABASE_URL=postgres://user:pass@host:5432/dbname
+   
+   # Optional: Comma-separated allowed origins
+   ALLOWED_ORIGINS=https://example.com,https://www.example.com
+   
+   # Optional: Custom port (default: 8080)
+   PORT=8080
+   ```
+
+4. Start the server:
    ```bash
    npm start
    # or
    yarn start
    ```
 
-The server will start on port 8080 by default. You can change this by setting the `PORT` environment variable.
+### Implementation
+
+Add this single line to your HTML `<head>` section:
+```html
+<script src="https://your-resolver-domain.com/admin/ab-helper.js" defer></script>
+```
+
+That's it! The script will:
+- Automatically detect experiments for the current page
+- Handle variant assignment
+- Push events to dataLayer
+- Manage page transitions
+- Handle all error cases
 
 ## What it does
 - Matches the current page by **domain + exact path** (MVP).
