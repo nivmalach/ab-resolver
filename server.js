@@ -74,19 +74,50 @@ let experiments = [];
 
 // Treat BOTH baseline and test URLs as part of the experiment surface
 function matchesSurface(urlStr, exp) {
-  const u = new URL(urlStr);
-  const base = new URL(exp.baseline_url);
-  const test = new URL(exp.test_url);
+  try {
+    // Validate and parse all URLs
+    const urls = {
+      current: new URL(urlStr),
+      base: new URL(exp.baseline_url),
+      test: new URL(exp.test_url)
+    };
 
-  // host must match either baseline or test host
-  if (u.hostname !== base.hostname && u.hostname !== test.hostname) return false;
+    // Log for debugging
+    console.log('URL matching:', {
+      current: urls.current.toString(),
+      base: urls.base.toString(),
+      test: urls.test.toString()
+    });
 
-  const clean = (p) => p.replace(/\/$/, "");
-  const uPath    = clean(u.pathname);
-  const basePath = clean(base.pathname);
-  const testPath = clean(test.pathname);
+    // host must match either baseline or test host
+    if (urls.current.hostname !== urls.base.hostname && 
+        urls.current.hostname !== urls.test.hostname) {
+      console.log('Host mismatch:', {
+        current: urls.current.hostname,
+        base: urls.base.hostname,
+        test: urls.test.hostname
+      });
+      return false;
+    }
 
-  return uPath === basePath || uPath === testPath;
+    // Clean and compare paths
+    const clean = (p) => p.replace(/\/$/, "");
+    const paths = {
+      current: clean(urls.current.pathname),
+      base: clean(urls.base.pathname),
+      test: clean(urls.test.pathname)
+    };
+
+    console.log('Path comparison:', paths);
+    return paths.current === paths.base || paths.current === paths.test;
+  } catch (e) {
+    console.error('Error in URL matching:', e, {
+      urlStr,
+      baseline: exp.baseline_url,
+      test: exp.test_url
+    });
+    return false;
+  }
 }
 
 // --- DB helpers ---
@@ -362,14 +393,14 @@ app.get('/exp/resolve.js', async (req, res) => {
     const js =
       "!function(){try{var i='"+jsString(exp.id)+"',b=new URL('"+jsString(exp.baseline_url)+"'),t=new URL('"+jsString(exp.test_url)+"'),h=new URL(location.href)," +
       "C=function(n,v,d){var x=new Date;x.setTime(x.getTime()+864e5*d),document.cookie=n+'='+v+'; Path=/; Expires='+x.toUTCString()+'; SameSite=Lax'}," +
-      "S=function(u){return(typeof u==='string'?new URL(u):u).pathname.replace(/\\\\$/,'')}," +
-      "P=function(a,b){return S(a)===S(b)}," +
+      "S=function(u){try{return(typeof u==='string'?new URL(u):u).pathname.replace(/\\\\$/,'')}catch(e){console.error('[AB Test] Invalid URL:',u,e);return''}}," +
+      "P=function(a,b){try{var p1=S(a),p2=S(b);console.log('[AB Test] Comparing paths:',{p1,p2});return p1===p2}catch(e){console.error('[AB Test] Path comparison error:',e);return false}}," +
       "D=function(m){console.log('[AB Test]',m,{id:i,variant:v,current:h.toString(),baseline:b.toString(),test:t.toString(),isBaseline:P(h,b)})};" +
       // QA override via URL (?__exp=forceA|forceB)
       "var fm=location.search.match(/__exp=(forceA|forceB)/),F=fm?fm[1].slice(-1):'',ck='expvar_'+i,m=document.cookie.match(new RegExp('(?:^|; )'+ck+'=(A|B)')),v=m?m[1]:null;" +
       "v=(F==='A'||F==='B')?F:(v||'"+jsString(sv)+"');C(ck,v,90);D('Init');" +
       // redirect if needed
-      "if(v==='B'&&P(h.pathname,b.pathname)){D('Redirecting');t.search=h.search||'';t.hash=h.hash||'';location.replace(t.toString());return}" +
+      "if(v==='B'&&P(h,b)){console.log('[AB Test] On baseline with variant B, redirecting to:',t.toString());t.search=h.search||'';t.hash=h.hash||'';location.replace(t.toString());return}" +
       // exposure → dataLayer
       "window.dataLayer=window.dataLayer||[];window.dataLayer.push({event:'exp_exposure',experiment_id:i,variant_id:v});" +
       "}catch(e){console.error('[AB Test] Error:',e)}finally{document.documentElement.classList.remove('ab-hide')}}();";
