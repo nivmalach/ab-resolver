@@ -272,14 +272,27 @@ app.post('/experiments/:id/stop', requireAdmin, async (req,res)=>{
 
 // Deterministic assignment based on cid (GA client hint) + experiment id
 function assignVariant({ cid, id, allocation_b }) {
+  // Default allocation is 50/50
+  const allocation = allocation_b == null ? 0.5 : Number(allocation_b);
+  
+  // Generate a deterministic hash from the seed
   const seed = (cid || crypto.randomUUID()) + id;
   const hash = crypto.createHash("sha256").update(seed).digest();
+  
   // Use first 4 bytes as an unsigned 32-bit integer for a uniform 0..1 float
   const n = (hash[0] << 24) | (hash[1] << 16) | (hash[2] << 8) | hash[3];
-  // Convert to unsigned and normalize
-  const u32 = (n >>> 0); // 0..4294967295
-  const r = u32 / 4294967296; // 0..~1
-  return r < (allocation_b == null ? 0.5 : allocation_b) ? "B" : "A";
+  const u32 = n >>> 0; // Convert to unsigned
+  const r = u32 / 0xFFFFFFFF; // Normalize to 0..1
+  
+  // Log assignment for debugging
+  console.log('Variant assignment:', {
+    seed,
+    allocation,
+    random: r,
+    variant: r < allocation ? "B" : "A"
+  });
+  
+  return r < allocation ? "B" : "A";
 }
 
 // Health check
@@ -297,15 +310,31 @@ function jsString(s) {
 // --- Server-side variant from IP + UA (no GA cookie needed)
 function assignVariantFromRequest(req, exp) {
   try {
+    // Default allocation is 50/50
+    const allocation = exp.allocation_b == null ? 0.5 : Number(exp.allocation_b);
+    
+    // Generate deterministic seed from request
     const ip = (req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.ip || '').toString();
     const ua = (req.headers['user-agent'] || '').toString();
     const seed = ip + '|' + ua + '|' + exp.id;
+    
+    // Generate hash and convert to float
     const hash = crypto.createHash('sha256').update(seed).digest();
     const n = (hash[0] << 24) | (hash[1] << 16) | (hash[2] << 8) | hash[3];
-    const u32 = (n >>> 0);
-    const r = u32 / 4294967296; // 0..1
-    return r < (exp.allocation_b == null ? 0.5 : exp.allocation_b) ? 'B' : 'A';
-  } catch {
+    const u32 = n >>> 0;
+    const r = u32 / 0xFFFFFFFF; // Normalize to 0..1
+    
+    // Log assignment for debugging
+    console.log('Server variant assignment:', {
+      ip: ip.split('.')[0] + '.x.x.x', // Log first octet only
+      allocation,
+      random: r,
+      variant: r < allocation ? 'B' : 'A'
+    });
+    
+    return r < allocation ? 'B' : 'A';
+  } catch (e) {
+    console.error('Error in variant assignment:', e);
     return 'A';
   }
 }
@@ -333,14 +362,14 @@ app.get('/exp/resolve.js', async (req, res) => {
     const js =
       "!function(){try{var i='"+jsString(exp.id)+"',b=new URL('"+jsString(exp.baseline_url)+"'),t=new URL('"+jsString(exp.test_url)+"'),h=new URL(location.href)," +
       "C=function(n,v,d){var x=new Date;x.setTime(x.getTime()+864e5*d),document.cookie=n+'='+v+'; Path=/; Expires='+x.toUTCString()+'; SameSite=Lax'}," +
-      "S=function(u){u.pathname=u.pathname.replace(/\\\\$/,'');return u}," +
-      "P=function(a,b){return S(a).pathname===S(b).pathname}," +
-      "D=function(m){console.log('[AB Test]',m,{id:i,variant:v,current:h.toString(),baseline:b.toString(),test:t.toString()})};" +
+      "S=function(u){return(typeof u==='string'?new URL(u):u).pathname.replace(/\\\\$/,'')}," +
+      "P=function(a,b){return S(a)===S(b)}," +
+      "D=function(m){console.log('[AB Test]',m,{id:i,variant:v,current:h.toString(),baseline:b.toString(),test:t.toString(),isBaseline:P(h,b)})};" +
       // QA override via URL (?__exp=forceA|forceB)
       "var fm=location.search.match(/__exp=(forceA|forceB)/),F=fm?fm[1].slice(-1):'',ck='expvar_'+i,m=document.cookie.match(new RegExp('(?:^|; )'+ck+'=(A|B)')),v=m?m[1]:null;" +
       "v=(F==='A'||F==='B')?F:(v||'"+jsString(sv)+"');C(ck,v,90);D('Init');" +
       // redirect if needed
-      "if(v==='B'&&P(h,b)){D('Redirecting');t.search=h.search||'';t.hash=h.hash||'';location.replace(t.toString());return}" +
+      "if(v==='B'&&P(h.pathname,b.pathname)){D('Redirecting');t.search=h.search||'';t.hash=h.hash||'';location.replace(t.toString());return}" +
       // exposure → dataLayer
       "window.dataLayer=window.dataLayer||[];window.dataLayer.push({event:'exp_exposure',experiment_id:i,variant_id:v});" +
       "}catch(e){console.error('[AB Test] Error:',e)}finally{document.documentElement.classList.remove('ab-hide')}}();";
