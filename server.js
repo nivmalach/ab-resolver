@@ -344,17 +344,29 @@ function assignVariantFromRequest(req, exp) {
     // Default allocation is 50/50
     const allocation = exp.allocation_b == null ? 0.5 : Number(exp.allocation_b);
     
-    // Generate random number for this request
-    const random = Math.random(); // Simple and truly random
+    // Generate deterministic hash from IP + UA
+    const ip = (req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.ip || '').toString();
+    const ua = (req.headers['user-agent'] || '').toString();
+    const seed = ip + '|' + ua + '|' + exp.id;
+    
+    // Use first 4 bytes of hash for random number
+    const hash = crypto.createHash('sha256').update(seed).digest();
+    const n = (hash[0] << 24) | (hash[1] << 16) | (hash[2] << 8) | hash[3];
+    const random = (n >>> 0) / 0xFFFFFFFF; // Normalize to 0..1
+    
+    // Force exact 50/50 split
+    const variant = random < allocation ? 'B' : 'A';
     
     // Log assignment for debugging
     console.log('Server variant assignment:', {
+      ip: ip.split('.')[0] + '.x.x.x',
       allocation,
       random,
-      variant: random < allocation ? 'B' : 'A'
+      variant,
+      hash: hash.slice(0, 4).toString('hex')
     });
     
-    return random < allocation ? 'B' : 'A';
+    return variant;
   } catch (e) {
     console.error('Error in variant assignment:', e);
     return 'A';
