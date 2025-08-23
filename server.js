@@ -79,7 +79,80 @@ function assignVariant({ cid, id, allocation_b }) {
 }
 
 // Health check
+
 app.get("/healthz", (_, res) => res.json({ ok: true }));
+
+// --- Helper: escape for JS string literals
+function jsString(s) {
+  return String(s || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\r?\n/g, '\\n');
+}
+
+// --- Server-side variant from IP + UA (no GA cookie needed)
+function assignVariantFromRequest(req, exp) {
+  try {
+    const ip = (req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.ip || '').toString();
+    const ua = (req.headers['user-agent'] || '').toString();
+    const seed = ip + '|' + ua + '|' + exp.id;
+    const hash = crypto.createHash('sha256').update(seed).digest();
+    const n = (hash[0] << 24) | (hash[1] << 16) | (hash[2] << 8) | hash[3];
+    const u32 = (n >>> 0);
+    const r = u32 / 4294967296; // 0..1
+    return r < (exp.allocation_b == null ? 0.5 : exp.allocation_b) ? 'B' : 'A';
+  } catch {
+    return 'A';
+  }
+}
+
+// --- Blocking JS endpoint (VWO-style)
+// Emits minimal JS that: (1) sets sticky cookie, (2) redirects baseline→test if B,
+// (3) pushes exp_exposure to dataLayer, (4) unhides the page (removes ab-hide)
+app.get('/exp/resolve.js', (req, res) => {
+  try {
+    const pageUrl = req.query.url || req.get('referer') || '';
+    const now = new Date();
+
+    const exp = experiments.find(e =>
+      e.status === 'running' &&
+      (!e.start_at || new Date(e.start_at) <= now) &&
+      (!e.stop_at  || new Date(e.stop_at)  >= now) &&
+      (pageUrl ? matchesSurface(pageUrl, e) : true)
+    );
+
+    res.set('Content-Type', 'application/javascript');
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+
+    if (!exp) {
+      return res.send("try{document.documentElement.classList.remove('ab-hide');}catch(e){}");
+    }
+
+    // Server-side deterministic assignment (IP+UA) unless client forces A/B via query
+    const force = (req.query.force === 'A' || req.query.force === 'B') ? req.query.force : null;
+    const sv = force || assignVariantFromRequest(req, exp);
+
+    // Minified JS payload executed in the page
+    const js =
+      "!function(){try{var i='"+jsString(exp.id)+"',b=new URL('"+jsString(exp.baseline_url)+"'),t=new URL('"+jsString(exp.test_url)+"'),h=new URL(location.href)," +
+      "C=function(n,v,d){var x=new Date;x.setTime(x.getTime()+864e5*d),document.cookie=n+'='+v+'; Path=/; Expires='+x.toUTCString()+'; SameSite=Lax'}," +
+      "S=function(u){u.pathname=u.pathname.replace(/\\\\$/,'');return u}," +
+      "P=function(a,b){a=S(new URL(a)),b=S(new URL(b));return a.origin===b.origin&&a.pathname===b.pathname};" +
+      // QA override via URL (?__exp=forceA|forceB)
+      "var fm=location.search.match(/__exp=(forceA|forceB)/),F=fm?fm[1].slice(-1):'',ck='expvar_'+i,m=document.cookie.match(new RegExp('(?:^|; )'+ck+'=(A|B)')),v=m?m[1]:null;" +
+      "v=(F==='A'||F==='B')?F:(v||'"+jsString(sv)+"');C(ck,v,90);" +
+      // redirect if needed
+      "if(P(h,b)&&v==='B'){t.search||(t.search=h.search),t.hash||(t.hash=h.hash);if(t.toString()!==h.toString()){location.replace(t.toString());return}}" +
+      // exposure → dataLayer
+      "window.dataLayer=window.dataLayer||[];window.dataLayer.push({event:'exp_exposure',experiment_id:i,variant_id:v});" +
+      "}catch(e){}try{document.documentElement.classList.remove('ab-hide')}catch(e){}}();";
+
+    return res.send(js);
+  } catch (e) {
+    res.set('Content-Type', 'application/javascript');
+    return res.send("try{document.documentElement.classList.remove('ab-hide');}catch(e){}");
+  }
+});
 
 // /exp/resolve: A request is considered active if it is on either the baseline or test URL of any running experiment.
 // Main resolver
