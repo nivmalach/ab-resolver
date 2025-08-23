@@ -329,20 +329,21 @@ app.get('/exp/resolve.js', async (req, res) => {
     const force = (req.query.force === 'A' || req.query.force === 'B') ? req.query.force : null;
     const sv = force || assignVariantFromRequest(req, exp);
 
-    // Minified JS payload executed in the page
+    // Debug-enabled JS payload executed in the page
     const js =
       "!function(){try{var i='"+jsString(exp.id)+"',b=new URL('"+jsString(exp.baseline_url)+"'),t=new URL('"+jsString(exp.test_url)+"'),h=new URL(location.href)," +
       "C=function(n,v,d){var x=new Date;x.setTime(x.getTime()+864e5*d),document.cookie=n+'='+v+'; Path=/; Expires='+x.toUTCString()+'; SameSite=Lax'}," +
       "S=function(u){u.pathname=u.pathname.replace(/\\\\$/,'');return u}," +
-      "P=function(a,b){a=S(new URL(a)),b=S(new URL(b));return a.origin===b.origin&&a.pathname===b.pathname};" +
+      "P=function(a,b){return S(a).pathname===S(b).pathname}," +
+      "D=function(m){console.log('[AB Test]',m,{id:i,variant:v,current:h.toString(),baseline:b.toString(),test:t.toString()})};" +
       // QA override via URL (?__exp=forceA|forceB)
       "var fm=location.search.match(/__exp=(forceA|forceB)/),F=fm?fm[1].slice(-1):'',ck='expvar_'+i,m=document.cookie.match(new RegExp('(?:^|; )'+ck+'=(A|B)')),v=m?m[1]:null;" +
-      "v=(F==='A'||F==='B')?F:(v||'"+jsString(sv)+"');C(ck,v,90);" +
+      "v=(F==='A'||F==='B')?F:(v||'"+jsString(sv)+"');C(ck,v,90);D('Init');" +
       // redirect if needed
-      "if(P(h,b)&&v==='B'){t.search||(t.search=h.search),t.hash||(t.hash=h.hash);if(t.toString()!==h.toString()){location.replace(t.toString());return}}" +
+      "if(v==='B'&&P(h,b)){D('Redirecting');t.search=h.search||'';t.hash=h.hash||'';location.replace(t.toString());return}" +
       // exposure → dataLayer
       "window.dataLayer=window.dataLayer||[];window.dataLayer.push({event:'exp_exposure',experiment_id:i,variant_id:v});" +
-      "}catch(e){}try{document.documentElement.classList.remove('ab-hide')}catch(e){}}();";
+      "}catch(e){console.error('[AB Test] Error:',e)}finally{document.documentElement.classList.remove('ab-hide')}}();";
 
     return res.send(js);
   } catch (e) {
