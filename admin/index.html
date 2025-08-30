@@ -108,6 +108,79 @@
       </section>
     </main>
 
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal">
+      <div class="modal-content card">
+        <div class="card-header">
+          <h2>Edit Experiment</h2>
+          <button class="icon-button" onclick="closeEditModal()">
+            <span class="material-icons">close</span>
+          </button>
+        </div>
+        <form id="editForm" class="card-content">
+          <input type="hidden" name="id" />
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="edit-name">Name</label>
+              <input type="text" id="edit-name" name="name" required />
+              <small>Descriptive name</small>
+            </div>
+            <div class="form-group">
+              <label for="edit-split">Split Ratio (B)</label>
+              <input type="range" id="edit-split" name="allocation_b" min="0" max="1" step="0.1" value="0.5" />
+              <output for="edit-split">50%</output>
+              <small>Percentage of traffic to variant B</small>
+            </div>
+            <div class="form-group full-width">
+              <label for="edit-baseline">Baseline URL</label>
+              <input type="url" id="edit-baseline" name="baseline_url" required />
+              <small>Control variant URL</small>
+            </div>
+            <div class="form-group full-width">
+              <label for="edit-test">Test URL</label>
+              <input type="url" id="edit-test" name="test_url" required />
+              <small>Test variant URL</small>
+            </div>
+            <div class="form-group">
+              <label for="edit-params">Preserve Parameters</label>
+              <select id="edit-params" name="preserve_params">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+              <small>Keep URL parameters when redirecting</small>
+            </div>
+            <div class="form-group">
+              <label for="edit-status">Status</label>
+              <select id="edit-status" name="status">
+                <option value="draft">Draft</option>
+                <option value="running">Running</option>
+                <option value="paused">Paused</option>
+                <option value="stopped">Stopped</option>
+              </select>
+              <small>Experiment status</small>
+            </div>
+            <div class="form-group">
+              <label for="edit-start">Start Date</label>
+              <input type="datetime-local" id="edit-start" name="start_at" />
+              <small>When to start the experiment</small>
+            </div>
+            <div class="form-group">
+              <label for="edit-stop">End Date</label>
+              <input type="datetime-local" id="edit-stop" name="stop_at" />
+              <small>When to end the experiment</small>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="button" onclick="closeEditModal()">Cancel</button>
+            <button type="submit" class="button primary">
+              <span class="material-icons">save</span>
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Toast container for notifications -->
     <div id="toast" class="toast"></div>
   </div>

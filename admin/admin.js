@@ -19,6 +19,13 @@ function formatDate(dateStr) {
   });
 }
 
+// Format date for input
+function formatDateInput(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
 // Format percentage
 function formatPercent(num) {
   return (num * 100).toFixed(0) + '%';
@@ -95,6 +102,9 @@ function renderTable(exps = experiments) {
               <span class="material-icons">stop</span>
             </button>
           ` : ''}
+          <button onclick="editExp('${exp.id}')" class="button" style="background: var(--gray-700); color: white;" title="Edit">
+            <span class="material-icons">edit</span>
+          </button>
           <button onclick="deleteExp('${exp.id}')" class="button danger" title="Delete">
             <span class="material-icons">delete</span>
           </button>
@@ -193,6 +203,77 @@ document.getElementById('searchExp').addEventListener('input', (e) => {
 // Handle refresh button
 document.getElementById('refreshBtn').addEventListener('click', () => {
   fetchExperiments();
+});
+
+// Edit experiment
+function editExp(id) {
+  const exp = experiments.find(e => e.id === id);
+  if (!exp) return;
+
+  const form = document.getElementById('editForm');
+  const modal = document.getElementById('editModal');
+  const splitInput = document.getElementById('edit-split');
+  const splitOutput = splitInput.nextElementSibling;
+
+  // Fill form
+  form.elements.id.value = exp.id;
+  form.elements.name.value = exp.name;
+  form.elements.baseline_url.value = exp.baseline_url;
+  form.elements.test_url.value = exp.test_url;
+  form.elements.allocation_b.value = exp.allocation_b;
+  form.elements.preserve_params.value = exp.preserve_params.toString();
+  form.elements.status.value = exp.status;
+  form.elements.start_at.value = formatDateInput(exp.start_at);
+  form.elements.stop_at.value = formatDateInput(exp.stop_at);
+  
+  // Update split display
+  splitOutput.value = formatPercent(exp.allocation_b);
+  
+  // Show modal
+  modal.className = 'modal show';
+}
+
+// Close edit modal
+function closeEditModal() {
+  document.getElementById('editModal').className = 'modal';
+}
+
+// Handle edit form submission
+document.getElementById('editForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const data = Object.fromEntries(new FormData(form));
+  const id = data.id;
+  delete data.id;
+  
+  // Format data
+  data.allocation_b = parseFloat(data.allocation_b);
+  data.preserve_params = data.preserve_params === 'true';
+  if (!data.start_at) delete data.start_at;
+  if (!data.stop_at) delete data.stop_at;
+  
+  try {
+    const res = await fetch(`/experiments/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    
+    if (!res.ok) throw new Error('Failed to update experiment');
+    
+    closeEditModal();
+    await fetchExperiments();
+    showToast('Experiment updated successfully');
+  } catch (err) {
+    showToast('Failed to update experiment', 'error');
+  }
+});
+
+// Handle edit split ratio input
+const editSplitInput = document.getElementById('edit-split');
+const editSplitOutput = editSplitInput.nextElementSibling;
+editSplitInput.addEventListener('input', () => {
+  editSplitOutput.value = formatPercent(editSplitInput.value);
 });
 
 // Initialize
