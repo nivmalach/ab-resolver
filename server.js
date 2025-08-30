@@ -383,63 +383,33 @@ function assignVariantFromRequest(req, exp) {
   }
 }
 
-// --- Blocking JS endpoint (VWO-style)
-// Emits minimal JS that: (1) sets sticky cookie, (2) redirects baseline→test if B,
-// (3) pushes exp_exposure to dataLayer, (4) unhides the page (removes ab-hide)
-app.get('/exp/resolve.js', async (req, res) => {
-  try {
-    const pageUrl = req.query.url || req.get('referer') || '';
-    const exp = pageUrl ? await findActiveExperimentForUrl(pageUrl) : null;
 
-    res.set('Content-Type', 'application/javascript');
-    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
-
-    if (!exp) {
-      return res.send("try{document.documentElement.classList.remove('ab-hide');}catch(e){}");
-    }
-
-    // Server-side deterministic assignment (IP+UA) unless client forces A/B via query
-    const force = (req.query.force === 'A' || req.query.force === 'B') ? req.query.force : null;
-    const sv = force || assignVariantFromRequest(req, exp);
-
-    // Debug-enabled JS payload executed in the page
-    const js =
-      "!function(){try{var i='"+jsString(exp.id)+"',b=new URL('"+jsString(exp.baseline_url)+"'),t=new URL('"+jsString(exp.test_url)+"'),h=new URL(location.href)," +
-      "C=function(n,v,d){var x=new Date;x.setTime(x.getTime()+864e5*d),document.cookie=n+'='+v+'; Path=/; Expires='+x.toUTCString()+'; SameSite=Lax'}," +
-      "S=function(u){try{var p=(typeof u==='string'?new URL(u):u).pathname;return p.endsWith('/')?p.slice(0,-1):p}catch(e){console.error('[AB Test] Invalid URL:',u,e);return''}}," +
-      "P=function(a,b){try{var p1=S(a),p2=S(b);var match=p1===p2;console.log('[AB Test] Comparing paths:',{p1,p2,match,raw1:a.pathname,raw2:b.pathname});return match}catch(e){console.error('[AB Test] Path comparison error:',e);return false}}," +
-      "D=function(m,o){console.log('[AB Test]',m,Object.assign({id:i,variant:v,current:h.pathname,baseline:b.pathname,test:t.pathname},o))};" +
-      // QA override via URL (?__exp=forceA|forceB)
-      "var fm=location.search.match(/__exp=(forceA|forceB)/),F=fm?fm[1].slice(-1):'',ck='expvar_'+i,m=document.cookie.match(new RegExp('(?:^|; )'+ck+'=(A|B)')),v=m?m[1]:null;" +
-      "v=(F==='A'||F==='B')?F:(v||'"+jsString(sv)+"');C(ck,v,90);D('Init');" +
-      // redirect if needed
-      "if(v==='B'){var isBase=P(h,b);D('Checking redirect',{onBaseline:isBase});if(isBase){D('Redirecting to test');t.search=h.search||'';t.hash=h.hash||'';location.replace(t.toString());return}}" +
-      // exposure → dataLayer
-      "window.dataLayer=window.dataLayer||[];window.dataLayer.push({event:'exp_exposure',experiment_id:i,variant_id:v});" +
-      "}catch(e){console.error('[AB Test] Error:',e)}finally{document.documentElement.classList.remove('ab-hide')}}();";
-
-    return res.send(js);
-  } catch (e) {
-    res.set('Content-Type', 'application/javascript');
-    return res.send("try{document.documentElement.classList.remove('ab-hide');}catch(e){}");
-  }
-});
 
 // /exp/resolve: A request is considered active if it is on either the baseline or test URL of any running experiment.
 // Main resolver
 app.post("/exp/resolve", async (req, res) => {
   try {
-    const { url, cid, force } = req.body || {};
+    const { url, cid, force, variant: existingVariant } = req.body || {};
     if (!url) return res.status(400).json({ active: false, error: "missing url" });
 
     const exp = await findActiveExperimentForUrl(url);
-
     if (!exp) return res.json({ active: false });
 
-    // Optional QA override (force A/B)
-    let variant = (force === "A" || force === "B")
-      ? force
-      : assignVariant({ cid, id: exp.id, allocation_b: exp.allocation_b });
+    // Determine variant:
+    // 1. Use force if provided (QA override)
+    // 2. Use existing variant if provided (cookie)
+    // 3. Generate new variant
+    let variant;
+    if (force === "A" || force === "B") {
+      variant = force;
+      console.log('Using forced variant:', variant);
+    } else if (existingVariant === "A" || existingVariant === "B") {
+      variant = existingVariant;
+      console.log('Using existing variant:', variant);
+    } else {
+      variant = assignVariant({ cid, id: exp.id, allocation_b: exp.allocation_b });
+      console.log('Generated new variant:', variant);
+    }
 
     return res.json({
       active: true,
