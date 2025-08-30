@@ -172,10 +172,11 @@ app.get('/admin/logout', (req, res) => {
   res.redirect('/admin/login');
 });
 
-// Serve public AB testing script
+// Serve public AB testing script with aggressive caching
 app.get('/ab.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
-  res.setHeader('Cache-Control', 'public, max-age=60');
+  res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+  res.setHeader('Vary', 'Accept-Encoding');
   res.sendFile(path.join(__dirname, 'public/ab.js'));
 });
 
