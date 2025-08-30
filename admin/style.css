@@ -212,6 +212,11 @@ input[type="range"] {
 }
 
 /* Table */
+.card-content {
+  min-height: 300px;
+  position: relative;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -227,10 +232,26 @@ th {
   font-weight: 500;
   color: var(--gray-600);
   background: var(--gray-50);
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 tr:hover {
   background: var(--gray-50);
+}
+
+.empty-state {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: var(--gray-500);
+  font-size: 0.875rem;
+  padding: 2rem;
+  width: 100%;
+  background: white;
 }
 
 /* Status Badges */
