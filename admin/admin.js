@@ -43,10 +43,13 @@ function formatPercent(num) {
 
 // Force variant
 async function forceVariant(expId, variant) {
-  const searchParams = new URLSearchParams(window.location.search);
-  searchParams.set('__exp', `force${variant}`);
-  const newUrl = `${window.location.pathname}?${searchParams}`;
-  window.open(newUrl, '_blank');
+  const exp = experiments.find(e => e.id === expId);
+  if (!exp) return;
+  
+  const url = variant === 'A' ? exp.baseline_url : exp.test_url;
+  const urlObj = new URL(url);
+  urlObj.searchParams.set('__exp', `force${variant}`);
+  window.open(urlObj.toString(), '_blank');
 }
 
 // Render experiments table
