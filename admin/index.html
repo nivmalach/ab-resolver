@@ -14,7 +14,12 @@
   <div class="app">
     <header>
       <div class="header-content">
-        <h1>AB Testing Dashboard</h1>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+          <h1>AB Testing Dashboard</h1>
+          <div style="color: var(--gray-500); font-size: 0.875rem;">
+            System time: <span id="systemTime"></span>
+          </div>
+        </div>
         <div class="header-actions">
           <button id="refreshBtn" class="icon-button" title="Refresh">
             <span class="material-icons">refresh</span>
@@ -59,6 +64,16 @@
                 <label for="exp-params">Preserve URL Parameters</label>
               </div>
             </div>
+            <div class="form-group">
+              <label for="exp-start">Start Date (optional)</label>
+              <input type="datetime-local" id="exp-start" name="start_at" />
+              <small>When to start the experiment</small>
+            </div>
+            <div class="form-group">
+              <label for="exp-stop">End Date (optional)</label>
+              <input type="datetime-local" id="exp-stop" name="stop_at" />
+              <small>When to end the experiment</small>
+            </div>
           </div>
           <div class="form-actions">
             <button type="submit" class="button primary">
@@ -80,20 +95,22 @@
           </div>
         </div>
         <div class="card-content">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Status</th>
-                <th>URLs</th>
-                <th>Split</th>
-                <th>Dates</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="expTableBody"></tbody>
-          </table>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>URLs</th>
+                  <th>Split</th>
+                  <th>Dates</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="expTableBody"></tbody>
+            </table>
+          </div>
         </div>
       </section>
     </main>

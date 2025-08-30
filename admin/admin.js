@@ -58,14 +58,31 @@ function renderTable(exps = experiments) {
   tbody.innerHTML = '';
   
   if (exps.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="7">
-          <div class="empty-state">No experiments found</div>
-        </td>
-      </tr>
-    `;
+    tbody.innerHTML = '';
+    const container = document.querySelector('.table-container');
+    container.innerHTML = '<div class="empty-state">No experiments found</div>';
     return;
+  }
+  
+  // Remove empty state if exists
+  const container = document.querySelector('.table-container');
+  if (container.querySelector('.empty-state')) {
+    container.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Status</th>
+            <th>URLs</th>
+            <th>Split</th>
+            <th>Dates</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="expTableBody"></tbody>
+      </table>
+    `;
   }
   
   exps.forEach(exp => {
@@ -307,6 +324,18 @@ document.getElementById('refreshBtn').addEventListener('click', () => {
   fetchExperiments();
 });
 
+// Update system time
+function updateSystemTime() {
+  const timeEl = document.getElementById('systemTime');
+  const now = new Date();
+  timeEl.textContent = now.toLocaleString('en-US', { 
+    dateStyle: 'medium', 
+    timeStyle: 'long'
+  });
+}
+
 // Initialize
 splitOutput.value = formatPercent(splitInput.value);
+updateSystemTime();
+setInterval(updateSystemTime, 1000);
 fetchExperiments();

@@ -213,7 +213,14 @@ input[type="range"] {
 
 /* Table */
 .card-content {
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+.table-container {
   min-height: 300px;
+  max-height: 600px;
+  overflow-y: auto;
   position: relative;
 }
 
@@ -232,6 +239,9 @@ th {
   font-weight: 500;
   color: var(--gray-600);
   background: var(--gray-50);
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 tr:hover {
@@ -239,16 +249,14 @@ tr:hover {
 }
 
 .empty-state {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
   color: var(--gray-500);
   font-size: 0.875rem;
-  padding: 2rem;
-  width: 100%;
-  background: white;
+  border-bottom: 1px solid var(--gray-200);
 }
 
 /* Status Badges */
