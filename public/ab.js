@@ -36,9 +36,14 @@
       return;
     }
 
-    // Set/update cookie
-    const expires = new Date(Date.now() + 90*24*60*60*1000).toUTCString();
-    document.cookie = `expvar_${exp.id}=${exp.variant}; Path=/; Expires=${expires}; SameSite=Lax`;
+    // Set/update cookie only if not using force parameter
+    const urlParams = new URLSearchParams(location.search);
+    const isForced = urlParams.get('__exp')?.startsWith('force');
+    
+    if (!isForced) {
+      const expires = new Date(Date.now() + 90*24*60*60*1000).toUTCString();
+      document.cookie = `expvar_${exp.id}=${exp.variant}; Path=/; Expires=${expires}; SameSite=Lax`;
+    }
     
     // Handle redirect if needed
     if (exp.variant === 'B') {

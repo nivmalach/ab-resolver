@@ -57,22 +57,15 @@ function renderTable(exps = experiments) {
   const tbody = document.getElementById('expTableBody');
   tbody.innerHTML = '';
   
-  const tableContent = document.querySelector('.card-content');
   if (exps.length === 0) {
-    tbody.innerHTML = '';
-    if (!tableContent.querySelector('.empty-state')) {
-      const emptyState = document.createElement('div');
-      emptyState.className = 'empty-state';
-      emptyState.innerHTML = 'No experiments found';
-      tableContent.appendChild(emptyState);
-    }
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7">
+          <div class="empty-state">No experiments found</div>
+        </td>
+      </tr>
+    `;
     return;
-  }
-  
-  // Remove empty state if exists
-  const existingEmptyState = tableContent.querySelector('.empty-state');
-  if (existingEmptyState) {
-    existingEmptyState.remove();
   }
   
   exps.forEach(exp => {
