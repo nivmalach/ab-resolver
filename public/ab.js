@@ -15,13 +15,18 @@
     variant: expCookie.trim().split('=')[1]
   } : null;
 
-  // Single API call with existing variant
+  // Get force parameter from URL
+  const urlParams = new URLSearchParams(location.search);
+  const force = urlParams.get('__exp')?.replace('force', '');
+
+  // Single API call with existing variant and force parameter
   fetch('https://ab-resolver.onrender.com/exp/resolve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
       url: location.href,
-      variant: existingVariant?.variant
+      variant: existingVariant?.variant,
+      force: force === 'A' || force === 'B' ? force : undefined
     })
   })
   .then(response => response.json())
