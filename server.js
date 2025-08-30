@@ -81,50 +81,27 @@ app.use((req, res, next) => {
 // Manage experiments via the API below; do not hardcode here.
 let experiments = [];
 
-// Treat BOTH baseline and test URLs as part of the experiment surface
+// Check if URL matches experiment surface (baseline or test URL)
 function matchesSurface(urlStr, exp) {
   try {
-    // Validate and parse all URLs
     const urls = {
       current: new URL(urlStr),
       base: new URL(exp.baseline_url),
       test: new URL(exp.test_url)
     };
 
-    // Log for debugging
-    console.log('URL matching:', {
-      current: urls.current.toString(),
-      base: urls.base.toString(),
-      test: urls.test.toString()
-    });
-
-    // host must match either baseline or test host
+    // Host must match either baseline or test
     if (urls.current.hostname !== urls.base.hostname && 
         urls.current.hostname !== urls.test.hostname) {
-      console.log('Host mismatch:', {
-        current: urls.current.hostname,
-        base: urls.base.hostname,
-        test: urls.test.hostname
-      });
       return false;
     }
 
-    // Clean and compare paths
-    const clean = (p) => p.replace(/\/$/, "");
-    const paths = {
-      current: clean(urls.current.pathname),
-      base: clean(urls.base.pathname),
-      test: clean(urls.test.pathname)
-    };
-
-    console.log('Path comparison:', paths);
-    return paths.current === paths.base || paths.current === paths.test;
-  } catch (e) {
-    console.error('Error in URL matching:', e, {
-      urlStr,
-      baseline: exp.baseline_url,
-      test: exp.test_url
-    });
+    // Compare paths without trailing slashes
+    const clean = p => p.replace(/\/$/, '');
+    const currentPath = clean(urls.current.pathname);
+    return currentPath === clean(urls.base.pathname) || 
+           currentPath === clean(urls.test.pathname);
+  } catch {
     return false;
   }
 }
@@ -311,28 +288,13 @@ app.post('/experiments/:id/stop', requireAdmin, async (req,res)=>{
   res.json(rows[0]);
 });
 
-// Deterministic assignment based on cid (GA client hint) + experiment id
+// Deterministic variant assignment based on client ID
 function assignVariant({ cid, id, allocation_b }) {
-  // Default allocation is 50/50
   const allocation = allocation_b == null ? 0.5 : Number(allocation_b);
-  
-  // Generate a deterministic hash from the seed
   const seed = (cid || crypto.randomUUID()) + id;
   const hash = crypto.createHash("sha256").update(seed).digest();
-  
-  // Use first 4 bytes as an unsigned 32-bit integer for a uniform 0..1 float
   const n = (hash[0] << 24) | (hash[1] << 16) | (hash[2] << 8) | hash[3];
-  const u32 = n >>> 0; // Convert to unsigned
-  const r = u32 / 0xFFFFFFFF; // Normalize to 0..1
-  
-  // Log assignment for debugging
-  console.log('Variant assignment:', {
-    seed,
-    allocation,
-    random: r,
-    variant: r < allocation ? "B" : "A"
-  });
-  
+  const r = (n >>> 0) / 0xFFFFFFFF;
   return r < allocation ? "B" : "A";
 }
 
@@ -395,21 +357,10 @@ app.post("/exp/resolve", async (req, res) => {
     const exp = await findActiveExperimentForUrl(url);
     if (!exp) return res.json({ active: false });
 
-    // Determine variant:
-    // 1. Use force if provided (QA override)
-    // 2. Use existing variant if provided (cookie)
-    // 3. Generate new variant
-    let variant;
-    if (force === "A" || force === "B") {
-      variant = force;
-      console.log('Using forced variant:', variant);
-    } else if (existingVariant === "A" || existingVariant === "B") {
-      variant = existingVariant;
-      console.log('Using existing variant:', variant);
-    } else {
-      variant = assignVariant({ cid, id: exp.id, allocation_b: exp.allocation_b });
-      console.log('Generated new variant:', variant);
-    }
+    // Determine variant (force → existing → new)
+    const variant = (force === "A" || force === "B") ? force :
+                   (existingVariant === "A" || existingVariant === "B") ? existingVariant :
+                   assignVariant({ cid, id: exp.id, allocation_b: exp.allocation_b });
 
     return res.json({
       active: true,

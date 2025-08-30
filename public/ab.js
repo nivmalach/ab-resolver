@@ -2,83 +2,66 @@
 (function() {
   // Hide page immediately
   document.documentElement.classList.add('ab-hide');
-  
-  // Add styles
-  var style = document.createElement('style');
-  style.textContent = 'html.ab-hide{opacity:0!important}html:not(.ab-hide){opacity:1!important;transition:opacity .1s}';
-  document.head.appendChild(style);
+  document.head.appendChild(
+    Object.assign(document.createElement('style'), {
+      textContent: 'html.ab-hide{opacity:0!important}html:not(.ab-hide){opacity:1!important;transition:opacity .1s}'
+    })
+  );
 
   // Get existing variant from cookie
   function getExperimentCookie() {
-    var cookies = document.cookie.split(';');
-    var expCookie = cookies.find(function(c) { 
-      return c.trim().startsWith('expvar_');
-    });
+    const expCookie = document.cookie.split(';')
+      .find(c => c.trim().startsWith('expvar_'));
+    
     if (expCookie) {
-      var parts = expCookie.split('=');
+      const [name, variant] = expCookie.trim().split('=');
       return {
-        id: parts[0].trim().replace('expvar_', ''),
-        variant: parts[1].trim()
+        id: name.replace('expvar_', ''),
+        variant
       };
     }
     return null;
   }
 
   // Check experiment and handle redirect
-  function checkExperiment() {
-    fetch('https://ab-resolver.onrender.com/exp/resolve', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        url: location.href,
-        // Pass existing variant if we have one
-        variant: (getExperimentCookie() || {}).variant
-      })
+  fetch('https://ab-resolver.onrender.com/exp/resolve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+      url: location.href,
+      variant: (getExperimentCookie() || {}).variant
     })
-    .then(function(response) { return response.json(); })
-    .then(function(exp) {
-      console.log('[AB Test] Got response:', exp);
+  })
+  .then(response => response.json())
+  .then(exp => {
+    if (exp.active) {
+      // Set cookie
+      const expires = new Date(Date.now() + 90*24*60*60*1000).toUTCString();
+      document.cookie = `expvar_${exp.id}=${exp.variant}; Path=/; Expires=${expires}; SameSite=Lax`;
       
-      if (exp.active) {
-        // Set cookie if needed
-        var cookieName = 'expvar_' + exp.id;
-        var cookieValue = exp.variant;
-        document.cookie = cookieName + '=' + cookieValue + '; Path=/; Expires=' + new Date(Date.now() + 90*24*60*60*1000).toUTCString() + '; SameSite=Lax';
+      // Check if redirect needed
+      if (exp.variant === 'B') {
+        const current = location.pathname.replace(/\/$/, '');
+        const baseline = new URL(exp.baseline_url).pathname.replace(/\/$/, '');
         
-        // Check if redirect needed
-        if (exp.variant === 'B') {
-          var current = location.pathname.replace(/\/$/, '');
-          var baseline = new URL(exp.baseline_url).pathname.replace(/\/$/, '');
-          
-          if (current === baseline) {
-            console.log('[AB Test] Redirecting to test variant');
-            var test = new URL(exp.test_url);
-            test.search = location.search || '';
-            test.hash = location.hash || '';
-            location.replace(test.toString());
-            return;
-          }
+        if (current === baseline) {
+          const test = new URL(exp.test_url);
+          test.search = location.search || '';
+          test.hash = location.hash || '';
+          location.replace(test.toString());
+          return;
         }
-        
-        // Push to dataLayer
-        window.dataLayer = window.dataLayer || [];
-        window.dataLayer.push({
-          event: 'exp_exposure',
-          experiment_id: exp.id,
-          variant_id: exp.variant
-        });
       }
       
-      // No redirect needed
-      console.log('[AB Test] No redirect needed');
-      document.documentElement.classList.remove('ab-hide');
-    })
-    .catch(function(err) {
-      console.error('[AB Test] Error:', err);
-      document.documentElement.classList.remove('ab-hide');
-    });
-  }
-
-  // Start experiment check
-  checkExperiment();
+      // Push to dataLayer
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push({
+        event: 'exp_exposure',
+        experiment_id: exp.id,
+        variant_id: exp.variant
+      });
+    }
+    document.documentElement.classList.remove('ab-hide');
+  })
+  .catch(() => document.documentElement.classList.remove('ab-hide'));
 })();
