@@ -34,40 +34,30 @@
         </div>
         <form id="createForm" class="card-content">
           <div class="form-grid">
-            <div class="form-group">
-              <label for="exp-id">Experiment ID</label>
-              <input type="text" id="exp-id" name="id" required pattern="[a-z0-9_]+" 
-                     title="Use lowercase letters, numbers, and underscores only"/>
-              <small>Unique identifier (e.g., homepage_hero_test)</small>
-            </div>
-            <div class="form-group">
-              <label for="exp-name">Name</label>
-              <input type="text" id="exp-name" name="name" required />
-              <small>Descriptive name (e.g., Homepage Hero Image Test)</small>
+            <div class="form-group full-width">
+              <label for="exp-name">Experiment Name</label>
+              <input type="text" id="exp-name" name="name" required placeholder="e.g., Homepage Hero Image Test" />
             </div>
             <div class="form-group full-width">
               <label for="exp-baseline">Baseline URL</label>
-              <input type="url" id="exp-baseline" name="baseline_url" required />
-              <small>Control variant URL</small>
+              <input type="url" id="exp-baseline" name="baseline_url" required placeholder="Control variant URL" />
             </div>
             <div class="form-group full-width">
               <label for="exp-test">Test URL</label>
-              <input type="url" id="exp-test" name="test_url" required />
-              <small>Test variant URL</small>
+              <input type="url" id="exp-test" name="test_url" required placeholder="Test variant URL" />
             </div>
             <div class="form-group">
               <label for="exp-split">Split Ratio (B)</label>
-              <input type="range" id="exp-split" name="allocation_b" min="0" max="1" step="0.1" value="0.5" />
-              <output for="exp-split">50%</output>
-              <small>Percentage of traffic to variant B</small>
+              <div style="display: flex; align-items: center; gap: 1rem;">
+                <input type="range" id="exp-split" name="allocation_b" min="0" max="1" step="0.1" value="0.5" style="flex: 1;" />
+                <output for="exp-split" style="min-width: 3rem;">50%</output>
+              </div>
             </div>
             <div class="form-group">
-              <label for="exp-params">Preserve Parameters</label>
-              <select id="exp-params" name="preserve_params">
-                <option value="true" selected>Yes</option>
-                <option value="false">No</option>
-              </select>
-              <small>Keep URL parameters when redirecting</small>
+              <div class="checkbox-group">
+                <input type="checkbox" id="exp-params" name="preserve_params" checked />
+                <label for="exp-params">Preserve URL Parameters</label>
+              </div>
             </div>
           </div>
           <div class="form-actions">

@@ -1,6 +1,16 @@
 // Admin Dashboard JavaScript
 let experiments = [];
 
+// Generate random ID
+function generateId() {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let id;
+  do {
+    id = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  } while (experiments.some(e => e.id === id));
+  return id;
+}
+
 // Toast notifications
 function showToast(message, type = 'success') {
   const toast = document.getElementById('toast');
@@ -31,10 +41,29 @@ function formatPercent(num) {
   return (num * 100).toFixed(0) + '%';
 }
 
+// Force variant
+async function forceVariant(expId, variant) {
+  const searchParams = new URLSearchParams(window.location.search);
+  searchParams.set('__exp', `force${variant}`);
+  const newUrl = `${window.location.pathname}?${searchParams}`;
+  window.open(newUrl, '_blank');
+}
+
 // Render experiments table
 function renderTable(exps = experiments) {
   const tbody = document.getElementById('expTableBody');
   tbody.innerHTML = '';
+  
+  if (exps.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" style="text-align: center; padding: 2rem;">
+          <div style="color: var(--gray-500);">No experiments found</div>
+        </td>
+      </tr>
+    `;
+    return;
+  }
   
   exps.forEach(exp => {
     const tr = document.createElement('tr');
@@ -48,18 +77,20 @@ function renderTable(exps = experiments) {
         <span class="status ${exp.status}">
           <span class="material-icons" style="font-size: 1rem;">
             ${exp.status === 'running' ? 'play_arrow' : 
-              exp.status === 'paused' ? 'pause' : 'stop'}
+              exp.status === 'stopped' ? 'stop' : 'pause'}
           </span>
           ${exp.status}
         </span>
       </td>
       <td>
         <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-          <a href="${exp.baseline_url}" target="_blank" style="display: flex; align-items: center; gap: 0.25rem; color: var(--gray-700); text-decoration: none;">
+          <a href="#" onclick="forceVariant('${exp.id}', 'A'); return false;" 
+             style="display: flex; align-items: center; gap: 0.25rem; color: var(--gray-700); text-decoration: none;">
             <span class="material-icons" style="font-size: 1rem;">radio_button_unchecked</span>
             Baseline
           </a>
-          <a href="${exp.test_url}" target="_blank" style="display: flex; align-items: center; gap: 0.25rem; color: var(--gray-700); text-decoration: none;">
+          <a href="#" onclick="forceVariant('${exp.id}', 'B'); return false;"
+             style="display: flex; align-items: center; gap: 0.25rem; color: var(--gray-700); text-decoration: none;">
             <span class="material-icons" style="font-size: 1rem;">change_history</span>
             Test
           </a>
@@ -93,11 +124,6 @@ function renderTable(exps = experiments) {
             </button>
           ` : ''}
           ${exp.status === 'running' ? `
-            <button onclick="updateStatus('${exp.id}','paused')" class="button" style="background: var(--warning); color: white;" title="Pause">
-              <span class="material-icons">pause</span>
-            </button>
-          ` : ''}
-          ${exp.status !== 'stopped' ? `
             <button onclick="updateStatus('${exp.id}','stopped')" class="button danger" title="Stop">
               <span class="material-icons">stop</span>
             </button>
@@ -162,9 +188,12 @@ document.getElementById('createForm').addEventListener('submit', async (e) => {
   const form = e.target;
   const data = Object.fromEntries(new FormData(form));
   
+  // Add generated ID
+  data.id = generateId();
+  
   // Format data
   data.allocation_b = parseFloat(data.allocation_b);
-  data.preserve_params = data.preserve_params === 'true';
+  data.preserve_params = data.preserve_params === 'on';
   
   try {
     const res = await fetch('/experiments', {
@@ -183,28 +212,6 @@ document.getElementById('createForm').addEventListener('submit', async (e) => {
   }
 });
 
-// Handle split ratio input
-const splitInput = document.getElementById('exp-split');
-const splitOutput = splitInput.nextElementSibling;
-splitInput.addEventListener('input', () => {
-  splitOutput.value = formatPercent(splitInput.value);
-});
-
-// Handle search
-document.getElementById('searchExp').addEventListener('input', (e) => {
-  const search = e.target.value.toLowerCase();
-  const filtered = experiments.filter(exp => 
-    exp.id.toLowerCase().includes(search) ||
-    exp.name.toLowerCase().includes(search)
-  );
-  renderTable(filtered);
-});
-
-// Handle refresh button
-document.getElementById('refreshBtn').addEventListener('click', () => {
-  fetchExperiments();
-});
-
 // Edit experiment
 function editExp(id) {
   const exp = experiments.find(e => e.id === id);
@@ -221,7 +228,7 @@ function editExp(id) {
   form.elements.baseline_url.value = exp.baseline_url;
   form.elements.test_url.value = exp.test_url;
   form.elements.allocation_b.value = exp.allocation_b;
-  form.elements.preserve_params.value = exp.preserve_params.toString();
+  form.elements.preserve_params.checked = exp.preserve_params;
   form.elements.status.value = exp.status;
   form.elements.start_at.value = formatDateInput(exp.start_at);
   form.elements.stop_at.value = formatDateInput(exp.stop_at);
@@ -248,7 +255,7 @@ document.getElementById('editForm').addEventListener('submit', async (e) => {
   
   // Format data
   data.allocation_b = parseFloat(data.allocation_b);
-  data.preserve_params = data.preserve_params === 'true';
+  data.preserve_params = data.preserve_params === 'on';
   if (!data.start_at) delete data.start_at;
   if (!data.stop_at) delete data.stop_at;
   
@@ -269,11 +276,32 @@ document.getElementById('editForm').addEventListener('submit', async (e) => {
   }
 });
 
-// Handle edit split ratio input
+// Handle split ratio inputs
+const splitInput = document.getElementById('exp-split');
+const splitOutput = splitInput.nextElementSibling;
+splitInput.addEventListener('input', () => {
+  splitOutput.value = formatPercent(splitInput.value);
+});
+
 const editSplitInput = document.getElementById('edit-split');
 const editSplitOutput = editSplitInput.nextElementSibling;
 editSplitInput.addEventListener('input', () => {
   editSplitOutput.value = formatPercent(editSplitInput.value);
+});
+
+// Handle search
+document.getElementById('searchExp').addEventListener('input', (e) => {
+  const search = e.target.value.toLowerCase();
+  const filtered = experiments.filter(exp => 
+    exp.id.toLowerCase().includes(search) ||
+    exp.name.toLowerCase().includes(search)
+  );
+  renderTable(filtered);
+});
+
+// Handle refresh button
+document.getElementById('refreshBtn').addEventListener('click', () => {
+  fetchExperiments();
 });
 
 // Initialize
