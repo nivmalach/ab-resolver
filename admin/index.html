@@ -2,38 +2,115 @@
 <html>
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AB Resolver Admin</title>
   <link rel="stylesheet" href="style.css">
+  <!-- Add Material Icons -->
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <!-- Add Google Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
-  <header>
-    <h1>Experiments Dashboard</h1>
-    <a href="/admin/logout" class="logout">Logout</a>
-  </header>
+  <div class="app">
+    <header>
+      <div class="header-content">
+        <h1>AB Testing Dashboard</h1>
+        <div class="header-actions">
+          <button id="refreshBtn" class="icon-button" title="Refresh">
+            <span class="material-icons">refresh</span>
+          </button>
+          <a href="/admin/logout" class="button danger">
+            <span class="material-icons">logout</span>
+            Logout
+          </a>
+        </div>
+      </div>
+    </header>
 
-  <section id="new-exp">
-    <h2>Create Experiment</h2>
-    <form id="createForm">
-      <input type="text" name="id" placeholder="Experiment ID" required />
-      <input type="text" name="name" placeholder="Name" required />
-      <input type="url" name="baseline_url" placeholder="Baseline URL" required />
-      <input type="url" name="test_url" placeholder="Test URL" required />
-      <input type="number" name="allocation_b" placeholder="Split (0-1)" step="0.1" value="0.5" />
-      <button type="submit">Create</button>
-    </form>
-  </section>
+    <main>
+      <section id="new-exp" class="card">
+        <div class="card-header">
+          <h2>Create Experiment</h2>
+        </div>
+        <form id="createForm" class="card-content">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="exp-id">Experiment ID</label>
+              <input type="text" id="exp-id" name="id" required pattern="[a-z0-9_]+" 
+                     title="Use lowercase letters, numbers, and underscores only"/>
+              <small>Unique identifier (e.g., homepage_hero_test)</small>
+            </div>
+            <div class="form-group">
+              <label for="exp-name">Name</label>
+              <input type="text" id="exp-name" name="name" required />
+              <small>Descriptive name (e.g., Homepage Hero Image Test)</small>
+            </div>
+            <div class="form-group full-width">
+              <label for="exp-baseline">Baseline URL</label>
+              <input type="url" id="exp-baseline" name="baseline_url" required />
+              <small>Control variant URL</small>
+            </div>
+            <div class="form-group full-width">
+              <label for="exp-test">Test URL</label>
+              <input type="url" id="exp-test" name="test_url" required />
+              <small>Test variant URL</small>
+            </div>
+            <div class="form-group">
+              <label for="exp-split">Split Ratio (B)</label>
+              <input type="range" id="exp-split" name="allocation_b" min="0" max="1" step="0.1" value="0.5" />
+              <output for="exp-split">50%</output>
+              <small>Percentage of traffic to variant B</small>
+            </div>
+            <div class="form-group">
+              <label for="exp-params">Preserve Parameters</label>
+              <select id="exp-params" name="preserve_params">
+                <option value="true" selected>Yes</option>
+                <option value="false">No</option>
+              </select>
+              <small>Keep URL parameters when redirecting</small>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="button primary">
+              <span class="material-icons">add</span>
+              Create Experiment
+            </button>
+          </div>
+        </form>
+      </section>
 
-  <section id="experiments">
-    <h2>Experiments</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>ID</th><th>Name</th><th>Status</th><th>Baseline</th><th>Test</th><th>Split</th><th>Actions</th>
-        </tr>
-      </thead>
-      <tbody id="expTableBody"></tbody>
-    </table>
-  </section>
+      <section id="experiments" class="card">
+        <div class="card-header">
+          <h2>Active Experiments</h2>
+          <div class="card-actions">
+            <div class="search-box">
+              <span class="material-icons">search</span>
+              <input type="text" id="searchExp" placeholder="Search experiments...">
+            </div>
+          </div>
+        </div>
+        <div class="card-content">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Status</th>
+                <th>URLs</th>
+                <th>Split</th>
+                <th>Dates</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="expTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <!-- Toast container for notifications -->
+    <div id="toast" class="toast"></div>
+  </div>
 
   <script src="admin.js"></script>
 </body>
