@@ -195,14 +195,15 @@ app.get('/admin/logout', (req, res) => {
   res.redirect('/admin/login');
 });
 
-// Serve AB testing helper files without auth
-app.use('/admin/ab-helper.js', express.static(path.join(__dirname, 'admin/ab-helper.js')));
-app.use('/admin/ab-styles.css', express.static(path.join(__dirname, 'admin/ab-styles.css')));
+// Serve public AB testing script
+app.get('/ab.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Cache-Control', 'public, max-age=60');
+  res.sendFile(path.join(__dirname, 'public/ab.js'));
+});
 
 // Protect /admin assets with cookie session (or open if no ADMIN_TOKEN)
 app.use('/admin', (req, res, next) => {
-  // Allow ab-helper.js and ab-styles.css without auth
-  if (req.path === '/ab-helper.js' || req.path === '/ab-styles.css') return next();
   if (!ADMIN_TOKEN) return next();
   if (req.path === '/login') return next();
   if (req.signedCookies && req.signedCookies.admin_session === 'yes') return next();
