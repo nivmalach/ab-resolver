@@ -57,16 +57,15 @@ function renderTable(exps = experiments) {
   const tbody = document.getElementById('expTableBody');
   tbody.innerHTML = '';
   
+  const container = document.getElementById('experimentsTable');
+  
   if (exps.length === 0) {
-    tbody.innerHTML = '';
-    const container = document.querySelector('.table-container');
     container.innerHTML = '<div class="empty-state">No experiments found</div>';
     return;
   }
   
-  // Remove empty state if exists
-  const container = document.querySelector('.table-container');
-  if (container.querySelector('.empty-state')) {
+  // Restore table if showing empty state
+  if (!container.querySelector('table')) {
     container.innerHTML = `
       <table>
         <thead>
@@ -311,7 +310,11 @@ editSplitInput.addEventListener('input', () => {
 
 // Handle search
 document.getElementById('searchExp').addEventListener('input', (e) => {
-  const search = e.target.value.toLowerCase();
+  const search = e.target.value.toLowerCase().trim();
+  if (!search) {
+    renderTable(experiments);
+    return;
+  }
   const filtered = experiments.filter(exp => 
     exp.id.toLowerCase().includes(search) ||
     exp.name.toLowerCase().includes(search)

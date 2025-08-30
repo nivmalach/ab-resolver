@@ -140,7 +140,8 @@ small {
   font-size: 0.875rem;
 }
 
-input, select {
+input:not([type="range"]), select {
+  width: 100%;
   padding: 0.5rem;
   border: 1px solid var(--gray-300);
   border-radius: var(--radius);
@@ -156,6 +157,11 @@ input:focus, select:focus {
 
 input[type="range"] {
   width: 100%;
+}
+
+.datetime-input {
+  font-family: inherit;
+  color: inherit;
 }
 
 .form-actions {
@@ -213,15 +219,15 @@ input[type="range"] {
 
 /* Table */
 .card-content {
-  padding: 0 !important;
-  overflow: hidden;
+  padding: 1.5rem;
 }
 
-.table-container {
+.experiments-table {
   min-height: 300px;
-  max-height: 600px;
-  overflow-y: auto;
-  position: relative;
+  background: white;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
 
 table {
@@ -249,14 +255,14 @@ tr:hover {
 }
 
 .empty-state {
-  height: 300px;
+  min-height: 300px;
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
   color: var(--gray-500);
   font-size: 0.875rem;
-  border-bottom: 1px solid var(--gray-200);
+  background: white;
 }
 
 /* Status Badges */
