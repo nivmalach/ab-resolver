@@ -25,44 +25,52 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   
-  // If ALLOWED_ORIGINS is empty or if the origin matches an experiment URL, allow it
-  const isAllowedOrigin = async () => {
-    // If no ALLOWED_ORIGINS set, allow all in dev mode
-    if (ALLOWED_ORIGINS.length === 0) return true;
-    
-    // Check if origin is in ALLOWED_ORIGINS
-    if (origin && ALLOWED_ORIGINS.includes(origin)) return true;
-    
-    // Check if origin matches any active experiment URLs
-    if (origin) {
-      try {
-        const originUrl = new URL(origin);
-        const experiments = pool ? await loadActiveExperimentsFromDB() : experiments;
-        return experiments.some(exp => {
-          try {
-            const baselineHost = new URL(exp.baseline_url).hostname;
-            const testHost = new URL(exp.test_url).hostname;
-            return originUrl.hostname === baselineHost || originUrl.hostname === testHost;
-          } catch (e) {
-            return false;
-          }
-        });
-      } catch (e) {
-        return false;
-      }
-    }
-    return false;
-  };
-
-  // Set CORS headers based on origin check
-  isAllowedOrigin().then(allowed => {
-    if (allowed) {
-      res.setHeader("Access-Control-Allow-Origin", origin || "*");
-      if (origin) res.setHeader("Vary", "Origin");
-    }
+  // Always allow the origin in development
+  if (ALLOWED_ORIGINS.length === 0) {
+    res.setHeader("Access-Control-Allow-Origin", origin || "*");
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-    res.setHeader("Access-Control-Allow-Credentials", "true");
+    if (req.method === "OPTIONS") return res.status(204).end();
+    return next();
+  }
+  
+  // In production, check if origin is allowed
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader("Vary", "Origin");
+    if (req.method === "OPTIONS") return res.status(204).end();
+    return next();
+  }
+  
+  // Check if origin matches any experiment URLs
+  const matchesExperiment = async () => {
+    if (!origin) return false;
+    try {
+      const originUrl = new URL(origin);
+      const experiments = pool ? await loadActiveExperimentsFromDB() : experiments;
+      return experiments.some(exp => {
+        try {
+          const baselineHost = new URL(exp.baseline_url).hostname;
+          const testHost = new URL(exp.test_url).hostname;
+          return originUrl.hostname === baselineHost || originUrl.hostname === testHost;
+        } catch (e) {
+          return false;
+        }
+      });
+    } catch (e) {
+      return false;
+    }
+  };
+
+  matchesExperiment().then(matches => {
+    if (matches) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      res.setHeader("Vary", "Origin");
+    }
     if (req.method === "OPTIONS") return res.status(204).end();
     next();
   }).catch(() => next());
