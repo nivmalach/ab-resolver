@@ -149,7 +149,7 @@ app.get('/admin/login', (req, res) => {
 app.post('/admin/login', express.urlencoded({ extended: true }), (req, res) => {
   const { username, password } = req.body;
   // Basic hardcoded auth - we'll replace this with a proper user system later
-  if (username === 'niv' && password === 'NM3103@mn') {
+  if (username === 'niv' && password === 'NM3103LLK6') {
     res.cookie('admin_session', 'yes', {
       httpOnly: true,
       signed: true,
