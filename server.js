@@ -147,7 +147,9 @@ app.get('/admin/login', (req, res) => {
 });
 
 app.post('/admin/login', express.urlencoded({ extended: true }), (req, res) => {
-  if (!ADMIN_TOKEN || req.body.password === ADMIN_TOKEN) {
+  const { username, password } = req.body;
+  // Basic hardcoded auth - we'll replace this with a proper user system later
+  if (username === 'niv' && password === 'NM3103@mn') {
     res.cookie('admin_session', 'yes', {
       httpOnly: true,
       signed: true,
@@ -156,7 +158,7 @@ app.post('/admin/login', express.urlencoded({ extended: true }), (req, res) => {
     });
     return res.redirect('/admin');
   }
-  res.status(401).send('Invalid password');
+  res.status(401).send('Invalid username or password');
 });
 
 app.get('/admin/logout', (req, res) => {
@@ -174,7 +176,6 @@ app.get('/ab.js', (req, res) => {
 
 // Admin auth middleware
 app.use('/admin', (req, res, next) => {
-  if (!ADMIN_TOKEN) return next();
   if (req.path === '/login') return next();
   if (req.signedCookies && req.signedCookies.admin_session === 'yes') return next();
   return res.redirect('/admin/login');
@@ -183,12 +184,8 @@ app.use('/admin', (req, res, next) => {
 app.use('/admin', express.static(path.join(__dirname, 'admin')));
 
 function requireAdmin(req, res, next){
-  const token = ADMIN_TOKEN;
-  if (!token) return next();
   const hasCookie = req.signedCookies && req.signedCookies.admin_session === 'yes';
-  const auth = req.headers['authorization'] || '';
-  const hasBearer = auth === `Bearer ${token}`;
-  if (hasCookie || hasBearer) return next();
+  if (hasCookie) return next();
   if ((req.headers.accept || '').includes('text/html')) return res.redirect('/admin/login');
   return res.status(401).json({ error: 'unauthorized' });
 }
