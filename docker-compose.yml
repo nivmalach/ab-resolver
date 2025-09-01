@@ -1,0 +1,23 @@
+version: "3.8"
+services:
+  ab-resolver:
+    build: .
+    restart: unless-stopped
+    # TEMP port for first test. We'll remove after putting behind Caddy.
+    ports:
+      - "3001:3000"
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-3000}
+      # Required environment variables
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-REPLACE_ME}
+      SESSION_SECRET: ${SESSION_SECRET:-REPLACE_ME}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      # DB connection to shared Postgres
+      DATABASE_URL: ${DATABASE_URL:-postgres://niv:REPLACE_ME@postgres:5432/ab-resolver}
+    networks:
+      - sharednet
+
+networks:
+  sharednet:
+    external: true

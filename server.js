@@ -335,4 +335,4 @@ app.post("/exp/resolve", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`exp resolver up on :${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`exp resolver up on 0.0.0.0:${PORT}`));
