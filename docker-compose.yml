@@ -9,7 +9,7 @@ services:
       NODE_ENV: production
       PORT: 3000
       # read from Portainer or .env file at runtime
-      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL: postgres://niv:${DB_PASSWORD}@postgres:5432/ab_resolver
       # keep any other app vars you need:
       SESSION_SECRET: ${SESSION_SECRET:-dev-secret-key}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
