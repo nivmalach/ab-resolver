@@ -4,38 +4,90 @@ const crypto  = require("crypto");
 const { Pool } = require('pg');
 const path = require("path");
 const cookieParser = require("cookie-parser");
-// Load and validate environment variables
-const ADMIN_USER = process.env.ADMIN_USER;
-const ADMIN_PASS = process.env.ADMIN_PASS;
-const SESSION_SECRET = process.env.SESSION_SECRET;
-const DATABASE_URL = process.env.DATABASE_URL || null;
+// Load environment variables from .env file in development
+if (process.env.NODE_ENV !== 'production') {
+  try {
+    require('dotenv').config();
+  } catch (err) {
+    console.warn('dotenv not installed, skipping .env file loading');
+  }
+}
+
+// Required environment variables
+const requiredEnvVars = {
+  ADMIN_USER: process.env.ADMIN_USER,
+  ADMIN_PASS: process.env.ADMIN_PASS,
+  SESSION_SECRET: process.env.SESSION_SECRET,
+  DATABASE_URL: process.env.DATABASE_URL
+};
+
+// Check for missing required environment variables
+const missingVars = Object.entries(requiredEnvVars)
+  .filter(([_, value]) => !value)
+  .map(([key]) => key);
+
+if (missingVars.length > 0) {
+  console.error('Missing required environment variables:', missingVars);
+  console.error('Available environment variables:', Object.keys(process.env).sort());
+  console.error(`
+Please ensure all required environment variables are set:
+- In development: Create a .env file with the required variables
+- In production: Set the environment variables in your Docker configuration
+Required variables:
+${missingVars.map(v => `- ${v}`).join('\n')}
+`);
+  process.exit(1);
+}
 
 // Log environment configuration (without sensitive values)
 console.log('Environment Configuration:', {
   NODE_ENV: process.env.NODE_ENV || 'development',
-  DATABASE_URL: DATABASE_URL ? 'set' : 'not set',
-  SESSION_SECRET: SESSION_SECRET ? 'set' : 'not set',
-  ADMIN_USER: ADMIN_USER ? 'set' : 'not set',
-  ADMIN_PASS: ADMIN_PASS ? 'set' : 'not set',
-  PORT: process.env.PORT || '3000 (default)'
+  DATABASE_URL: requiredEnvVars.DATABASE_URL ? 'set' : 'not set',
+  SESSION_SECRET: requiredEnvVars.SESSION_SECRET ? 'set' : 'not set',
+  ADMIN_USER: requiredEnvVars.ADMIN_USER ? 'set' : 'not set',
+  ADMIN_PASS: requiredEnvVars.ADMIN_PASS ? 'set' : 'not set',
+  PORT: process.env.PORT || '3000 (default)',
+  ALLOWED_ORIGINS: (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean).length + ' origins'
 });
 let pool = null;
 if (DATABASE_URL) {
-  pool = new Pool({ connectionString: DATABASE_URL });
-  pool.on('error', (err) => {
-    console.error('Unexpected error on idle client', err);
-    // Don't exit the process, just log the error
-  });
-  // Test database connection
-  pool.query('SELECT NOW()', (err) => {
-    if (err) {
-      console.error('Error connecting to the database:', err);
+  try {
+    const dbConfig = {
+      connectionString: DATABASE_URL,
+      // Add SSL configuration if needed
+      ...(process.env.NODE_ENV === 'production' ? {} : { ssl: false })
+    };
+    
+    console.log('Initializing database connection with config:', {
+      ...dbConfig,
+      connectionString: dbConfig.connectionString ? 'set' : 'not set'
+    });
+    
+    pool = new Pool(dbConfig);
+    
+    pool.on('error', (err) => {
+      console.error('Unexpected error on idle client:', err);
       // Don't exit the process, just log the error
-      pool = null; // Disable database operations
-    } else {
-      console.log('Successfully connected to the database');
-    }
-  });
+    });
+    
+    // Test database connection
+    pool.query('SELECT NOW()', (err) => {
+      if (err) {
+        console.error('Database connection test failed:', {
+          error: err.message,
+          code: err.code,
+          detail: err.detail
+        });
+        // Don't exit the process, just log the error and disable database operations
+        pool = null;
+      } else {
+        console.log('Successfully connected to the database');
+      }
+    });
+  } catch (err) {
+    console.error('Error initializing database pool:', err);
+    pool = null;
+  }
 } else {
   console.warn('No DATABASE_URL provided - running without database');
 }
