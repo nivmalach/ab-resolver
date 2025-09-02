@@ -4,9 +4,21 @@ const crypto  = require("crypto");
 const { Pool } = require('pg');
 const path = require("path");
 const cookieParser = require("cookie-parser");
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ""; // set on Render
-const SESSION_SECRET = process.env.SESSION_SECRET || ADMIN_TOKEN || "change-me";
+// Load and validate environment variables
+const ADMIN_USER = process.env.ADMIN_USER;
+const ADMIN_PASS = process.env.ADMIN_PASS;
+const SESSION_SECRET = process.env.SESSION_SECRET;
 const DATABASE_URL = process.env.DATABASE_URL || null;
+
+// Log environment configuration (without sensitive values)
+console.log('Environment Configuration:', {
+  NODE_ENV: process.env.NODE_ENV || 'development',
+  DATABASE_URL: DATABASE_URL ? 'set' : 'not set',
+  SESSION_SECRET: SESSION_SECRET ? 'set' : 'not set',
+  ADMIN_USER: ADMIN_USER ? 'set' : 'not set',
+  ADMIN_PASS: ADMIN_PASS ? 'set' : 'not set',
+  PORT: process.env.PORT || '3000 (default)'
+});
 let pool = null;
 if (DATABASE_URL) {
   pool = new Pool({ connectionString: DATABASE_URL });
@@ -186,16 +198,22 @@ app.post('/admin/login', express.urlencoded({ extended: true }), (req, res) => {
     return res.status(400).json({ error: 'missing_credentials' });
   }
 
-  const ADMIN_USER = process.env.ADMIN_USER;
-  const ADMIN_PASS = process.env.ADMIN_PASS;
+  // Double check environment variables at login time
+  const envUser = process.env.ADMIN_USER;
+  const envPass = process.env.ADMIN_PASS;
   
-  if (!ADMIN_USER || !ADMIN_PASS) {
-    console.error('Admin credentials not configured in environment');
+  console.log('Login - checking environment variables:', {
+    ADMIN_USER: envUser ? 'set' : 'not set',
+    ADMIN_PASS: envPass ? 'set' : 'not set'
+  });
+  
+  if (!envUser || !envPass) {
+    console.error('Admin credentials missing from environment. Available env vars:', Object.keys(process.env));
     return res.status(500).json({ error: 'server_configuration_error' });
   }
 
   console.log('Validating credentials for user:', username);
-  if (username === ADMIN_USER && password === ADMIN_PASS) {
+  if (username === envUser && password === envPass) {
     console.log('Login successful for user:', username);
     
     // Set cookie with appropriate security settings for production
