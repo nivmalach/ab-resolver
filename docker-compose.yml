@@ -5,8 +5,15 @@ services:
     restart: unless-stopped
     ports:
       - "3001:3000"   # TEMP for testing; remove after HTTPS works
-    # Environment variables should be configured in Portainer
-    # DO NOT hardcode sensitive values here!
+    # Pass through environment variables from Portainer
+    environment:
+      - NODE_ENV
+      - PORT
+      - DATABASE_URL
+      - SESSION_SECRET
+      - ADMIN_USER
+      - ADMIN_PASS
+      - ALLOWED_ORIGINS
     networks:
       - sharednet
 
