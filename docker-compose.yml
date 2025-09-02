@@ -6,13 +6,13 @@ services:
     ports:
       - "3001:3000"   # TEMP for testing; remove after HTTPS works
     environment:
-      NODE_ENV: production
-      PORT: 3000
-      # read from Portainer or .env file at runtime
-      DATABASE_URL: postgres://niv:${DB_PASSWORD}@postgres:5432/ab_resolver
-      # keep any other app vars you need:
-      SESSION_SECRET: ${SESSION_SECRET:-dev-secret-key}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgres://root:NM3103%40mm@postgres:5432/postgres
+      - SESSION_SECRET=cf742b2c357116e42a3439f542
+      - ADMIN_USER=niv
+      - ADMIN_PASS=NM3103LLK6
+      - ALLOWED_ORIGINS=https://opsotools.com,https://ab-resolver.opsotools.com
     networks:
       - sharednet
 
