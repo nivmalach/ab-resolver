@@ -12,13 +12,14 @@ if (DATABASE_URL) {
   pool = new Pool({ connectionString: DATABASE_URL });
   pool.on('error', (err) => {
     console.error('Unexpected error on idle client', err);
-    process.exit(-1);
+    // Don't exit the process, just log the error
   });
   // Test database connection
   pool.query('SELECT NOW()', (err) => {
     if (err) {
       console.error('Error connecting to the database:', err);
-      process.exit(-1);
+      // Don't exit the process, just log the error
+      pool = null; // Disable database operations
     } else {
       console.log('Successfully connected to the database');
     }
@@ -216,7 +217,16 @@ app.use('/admin', (req, res, next) => {
   return res.redirect('/admin/login');
 });
 
-app.use('/admin', express.static(path.join(__dirname, 'admin')));
+// Serve admin static files
+app.use('/admin', (req, res, next) => {
+  express.static(path.join(__dirname, 'admin'))(req, res, (err) => {
+    if (err) {
+      console.error('Error serving admin static files:', err);
+      return res.status(500).send('Error loading admin interface');
+    }
+    next();
+  });
+});
 
 function requireAdmin(req, res, next){
   const hasCookie = req.signedCookies && req.signedCookies.admin_session === 'yes';
@@ -367,6 +377,12 @@ app.post("/exp/resolve", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'server_error' });
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode`);
   console.log(`Listening on http://0.0.0.0:${PORT}`);
