@@ -23,7 +23,7 @@ const requiredEnvVars = {
 
 // Check for missing required environment variables
 const missingVars = Object.entries(requiredEnvVars)
-  .filter(([_, value]) => !value)
+  .filter(([_, value]) => value === undefined || value === null)
   .map(([key]) => key);
 
 if (missingVars.length > 0) {
@@ -259,7 +259,7 @@ app.post('/admin/login', express.urlencoded({ extended: true }), (req, res) => {
     ADMIN_PASS: envPass ? 'set' : 'not set'
   });
   
-  if (!envUser || !envPass) {
+  if (envUser === undefined || envUser === null || envPass === undefined || envPass === null) {
     console.error('Admin credentials missing from environment. Available env vars:', Object.keys(process.env));
     return res.status(500).json({ error: 'server_configuration_error' });
   }
