@@ -21,16 +21,6 @@ console.log('Server configuration:', {
   ALLOWED_ORIGINS: (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean)
 });
 
-// Log environment configuration (without sensitive values)
-console.log('Environment Configuration:', {
-  NODE_ENV: process.env.NODE_ENV || 'development',
-  DATABASE_URL: requiredEnvVars.DATABASE_URL ? 'set' : 'not set',
-  SESSION_SECRET: requiredEnvVars.SESSION_SECRET ? 'set' : 'not set',
-  ADMIN_USER: requiredEnvVars.ADMIN_USER ? 'set' : 'not set',
-  ADMIN_PASS: requiredEnvVars.ADMIN_PASS ? 'set' : 'not set',
-  PORT: process.env.PORT || '3000 (default)',
-  ALLOWED_ORIGINS: (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean).length + ' origins'
-});
 let pool = null;
 if (DATABASE_URL) {
   try {
