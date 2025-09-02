@@ -178,23 +178,48 @@ app.get('/admin/login', (req, res) => {
 });
 
 app.post('/admin/login', express.urlencoded({ extended: true }), (req, res) => {
+  console.log('Login attempt received');
+  
   const { username, password } = req.body;
+  if (!username || !password) {
+    console.warn('Login attempt with missing credentials');
+    return res.status(400).json({ error: 'missing_credentials' });
+  }
+
   const ADMIN_USER = process.env.ADMIN_USER;
   const ADMIN_PASS = process.env.ADMIN_PASS;
+  
   if (!ADMIN_USER || !ADMIN_PASS) {
-    console.error('Admin credentials not configured');
-    return res.status(500).json({ error: 'server_error' });
+    console.error('Admin credentials not configured in environment');
+    return res.status(500).json({ error: 'server_configuration_error' });
   }
+
+  console.log('Validating credentials for user:', username);
   if (username === ADMIN_USER && password === ADMIN_PASS) {
-    res.cookie('admin_session', 'yes', {
+    console.log('Login successful for user:', username);
+    
+    // Set cookie with appropriate security settings for production
+    const cookieOptions = {
       httpOnly: true,
       signed: true,
-      sameSite: 'lax',
-      secure: true,
-    });
-    return res.redirect('/admin');
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    };
+    
+    try {
+      res.cookie('admin_session', 'yes', cookieOptions);
+      console.log('Session cookie set successfully');
+      return res.redirect('/admin');
+    } catch (err) {
+      console.error('Error setting session cookie:', err);
+      return res.status(500).json({ error: 'session_error' });
+    }
   }
-  res.status(401).send('Invalid username or password');
+
+  console.warn('Invalid login attempt for user:', username);
+  res.status(401).json({ error: 'invalid_credentials' });
 });
 
 app.get('/admin/logout', (req, res) => {
@@ -210,22 +235,27 @@ app.get('/ab.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'public/ab.js'));
 });
 
-// Admin auth middleware
+// Serve admin static files first
+const adminStatic = express.static(path.join(__dirname, 'admin'));
 app.use('/admin', (req, res, next) => {
-  if (req.path === '/login') return next();
-  if (req.signedCookies && req.signedCookies.admin_session === 'yes') return next();
+  // Always allow access to login page and its assets
+  if (req.path === '/login' || req.path === '/login.html' || req.path.startsWith('/style.css') || req.path.startsWith('/admin.js')) {
+    return adminStatic(req, res, next);
+  }
+  
+  // Check auth for other admin routes
+  if (req.signedCookies && req.signedCookies.admin_session === 'yes') {
+    return adminStatic(req, res, (err) => {
+      if (err) {
+        console.error('Error serving admin static files:', err);
+        return res.status(500).send('Error loading admin interface');
+      }
+      next();
+    });
+  }
+  
+  // Redirect to login for unauthorized requests
   return res.redirect('/admin/login');
-});
-
-// Serve admin static files
-app.use('/admin', (req, res, next) => {
-  express.static(path.join(__dirname, 'admin'))(req, res, (err) => {
-    if (err) {
-      console.error('Error serving admin static files:', err);
-      return res.status(500).send('Error loading admin interface');
-    }
-    next();
-  });
 });
 
 function requireAdmin(req, res, next){
