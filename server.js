@@ -356,13 +356,17 @@ app.post('/experiments', requireAdmin, async (req, res) => {
       (id, name, baseline_url, test_url, allocation_b, status, preserve_params, start_at, stop_at)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
       RETURNING *`;
+    // Convert empty strings to null for timestamp fields
     const params = [
-      b.id, b.name, b.baseline_url, b.test_url,
+      b.id, 
+      b.name, 
+      b.baseline_url, 
+      b.test_url,
       b.allocation_b ?? 0.5,
       b.status ?? 'draft',
       b.preserve_params ?? true,
-      b.start_at ?? null,
-      b.stop_at ?? null
+      b.start_at === '' ? null : b.start_at ?? null,
+      b.stop_at === '' ? null : b.stop_at ?? null
     ];
     const { rows } = await dbQuery(q, params);
     res.json(rows[0]);
