@@ -13,6 +13,15 @@ if (process.env.NODE_ENV !== 'production') {
   }
 }
 
+// Debug environment variables
+console.log('Full process.env:', {
+  ...process.env,
+  // Redact sensitive values
+  DATABASE_URL: process.env.DATABASE_URL ? '[REDACTED]' : undefined,
+  SESSION_SECRET: process.env.SESSION_SECRET ? '[REDACTED]' : undefined,
+  ADMIN_PASS: process.env.ADMIN_PASS ? '[REDACTED]' : undefined
+});
+
 // Required environment variables
 const requiredEnvVars = {
   ADMIN_USER: process.env.ADMIN_USER,
@@ -20,6 +29,42 @@ const requiredEnvVars = {
   SESSION_SECRET: process.env.SESSION_SECRET,
   DATABASE_URL: process.env.DATABASE_URL
 };
+
+// Check for potential encoding or whitespace issues
+Object.entries(process.env).forEach(([key, value]) => {
+  if (typeof value === 'string' && (value.includes('\u0000') || /^\s+|\s+$/.test(value))) {
+    console.warn(`Warning: Environment variable ${key} contains unusual characters:`, {
+      hasNullByte: value.includes('\u0000'),
+      hasWhitespace: /^\s+|\s+$/.test(value),
+      length: value.length,
+      charCodes: Array.from(value).map(c => c.charCodeAt(0))
+    });
+  }
+});
+
+// Log how each variable was read
+console.log('Environment variable details:', {
+  ADMIN_USER: {
+    type: typeof process.env.ADMIN_USER,
+    length: process.env.ADMIN_USER?.length,
+    rawValue: process.env.ADMIN_USER
+  },
+  ADMIN_PASS: {
+    type: typeof process.env.ADMIN_PASS,
+    length: process.env.ADMIN_PASS?.length,
+    isSet: process.env.ADMIN_PASS !== undefined
+  },
+  SESSION_SECRET: {
+    type: typeof process.env.SESSION_SECRET,
+    length: process.env.SESSION_SECRET?.length,
+    isSet: process.env.SESSION_SECRET !== undefined
+  },
+  DATABASE_URL: {
+    type: typeof process.env.DATABASE_URL,
+    length: process.env.DATABASE_URL?.length,
+    isSet: process.env.DATABASE_URL !== undefined
+  }
+});
 
 // Check for missing required environment variables
 const missingVars = Object.entries(requiredEnvVars)
