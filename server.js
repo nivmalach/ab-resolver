@@ -189,15 +189,46 @@ async function dbQuery(text, params) {
 
 async function loadActiveExperimentsFromDB(){
   if (!pool) return [];
-  const { rows } = await dbQuery(
-    `SELECT id, name, baseline_url, test_url, allocation_b, status, preserve_params, start_at, stop_at
-       FROM experiments
-      WHERE status = 'running'
-        AND (start_at IS NULL OR start_at <= NOW())
-        AND (stop_at  IS NULL OR stop_at  >= NOW())`,
-    []
-  );
-  return rows || [];
+  
+  try {
+    // First try to get the current schema
+    const schemaResult = await dbQuery('SELECT current_schema()', []);
+    console.log('Current database schema:', schemaResult.rows[0]);
+
+    // List all tables in the current schema
+    const tablesResult = await dbQuery(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = current_schema()
+    `, []);
+    console.log('Available tables:', tablesResult.rows.map(r => r.table_name));
+
+    // Try to describe the experiments table
+    try {
+      const tableInfo = await dbQuery(`
+        SELECT column_name, data_type 
+        FROM information_schema.columns 
+        WHERE table_name = 'experiments'
+      `, []);
+      console.log('Experiments table structure:', tableInfo.rows);
+    } catch (e) {
+      console.error('Error getting table info:', e);
+    }
+
+    // Now try the actual query
+    const { rows } = await dbQuery(
+      `SELECT id, name, baseline_url, test_url, allocation_b, status, preserve_params, start_at, stop_at
+         FROM experiments
+        WHERE status = 'running'
+          AND (start_at IS NULL OR start_at <= NOW())
+          AND (stop_at  IS NULL OR stop_at  >= NOW())`,
+      []
+    );
+    return rows || [];
+  } catch (e) {
+    console.error('Error in loadActiveExperimentsFromDB:', e);
+    return [];
+  }
 }
 
 async function findActiveExperimentForUrl(urlStr){
