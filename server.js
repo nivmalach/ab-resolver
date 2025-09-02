@@ -66,7 +66,7 @@ if (process.env.DATABASE_URL) {
 
 const app = express();
 app.use(express.json());
-app.use(cookieParser(SESSION_SECRET));
+app.use(cookieParser(process.env.SESSION_SECRET));
 
 // --- CORS configuration ---
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
