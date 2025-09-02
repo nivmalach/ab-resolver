@@ -13,7 +13,18 @@ if (process.env.NODE_ENV !== 'production') {
   }
 }
 
-// Log non-sensitive config on startup
+// Debug all environment variables at startup
+console.log('All environment variables:', Object.keys(process.env).sort());
+
+// Debug auth configuration
+console.log('Auth configuration:', {
+  ADMIN_USER_set: !!process.env.ADMIN_USER,
+  ADMIN_USER_length: process.env.ADMIN_USER?.length,
+  ADMIN_PASS_set: !!process.env.ADMIN_PASS,
+  ADMIN_PASS_length: process.env.ADMIN_PASS?.length
+});
+
+// Log non-sensitive config
 console.log('Server configuration:', {
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: process.env.PORT || 3000,
@@ -221,6 +232,18 @@ app.post('/admin/login', express.urlencoded({ extended: true }), (req, res) => {
     console.warn('Login attempt with missing credentials');
     return res.status(400).json({ error: 'missing_credentials' });
   }
+
+  // Debug login attempt
+  console.log('Login debug:', {
+    providedUsername: username,
+    providedPassword: password,
+    envAdminUser: process.env.ADMIN_USER,
+    envAdminPass: process.env.ADMIN_PASS,
+    matches: {
+      username: username === process.env.ADMIN_USER,
+      password: password === process.env.ADMIN_PASS
+    }
+  });
 
   // Check admin credentials
   if (username === process.env.ADMIN_USER && password === process.env.ADMIN_PASS) {
