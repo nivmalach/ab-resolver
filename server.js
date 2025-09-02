@@ -13,76 +13,13 @@ if (process.env.NODE_ENV !== 'production') {
   }
 }
 
-// Debug environment variables
-console.log('Full process.env:', {
-  ...process.env,
-  // Redact sensitive values
-  DATABASE_URL: process.env.DATABASE_URL ? '[REDACTED]' : undefined,
-  SESSION_SECRET: process.env.SESSION_SECRET ? '[REDACTED]' : undefined,
-  ADMIN_PASS: process.env.ADMIN_PASS ? '[REDACTED]' : undefined
+// Log non-sensitive config on startup
+console.log('Server configuration:', {
+  NODE_ENV: process.env.NODE_ENV || 'development',
+  PORT: process.env.PORT || 3000,
+  DATABASE_URL: process.env.DATABASE_URL ? 'set' : 'not set',
+  ALLOWED_ORIGINS: (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean)
 });
-
-// Required environment variables
-const requiredEnvVars = {
-  ADMIN_USER: process.env.ADMIN_USER,
-  ADMIN_PASS: process.env.ADMIN_PASS,
-  SESSION_SECRET: process.env.SESSION_SECRET,
-  DATABASE_URL: process.env.DATABASE_URL
-};
-
-// Check for potential encoding or whitespace issues
-Object.entries(process.env).forEach(([key, value]) => {
-  if (typeof value === 'string' && (value.includes('\u0000') || /^\s+|\s+$/.test(value))) {
-    console.warn(`Warning: Environment variable ${key} contains unusual characters:`, {
-      hasNullByte: value.includes('\u0000'),
-      hasWhitespace: /^\s+|\s+$/.test(value),
-      length: value.length,
-      charCodes: Array.from(value).map(c => c.charCodeAt(0))
-    });
-  }
-});
-
-// Log how each variable was read
-console.log('Environment variable details:', {
-  ADMIN_USER: {
-    type: typeof process.env.ADMIN_USER,
-    length: process.env.ADMIN_USER?.length,
-    rawValue: process.env.ADMIN_USER
-  },
-  ADMIN_PASS: {
-    type: typeof process.env.ADMIN_PASS,
-    length: process.env.ADMIN_PASS?.length,
-    isSet: process.env.ADMIN_PASS !== undefined
-  },
-  SESSION_SECRET: {
-    type: typeof process.env.SESSION_SECRET,
-    length: process.env.SESSION_SECRET?.length,
-    isSet: process.env.SESSION_SECRET !== undefined
-  },
-  DATABASE_URL: {
-    type: typeof process.env.DATABASE_URL,
-    length: process.env.DATABASE_URL?.length,
-    isSet: process.env.DATABASE_URL !== undefined
-  }
-});
-
-// Check for missing required environment variables
-const missingVars = Object.entries(requiredEnvVars)
-  .filter(([_, value]) => value === undefined || value === null)
-  .map(([key]) => key);
-
-if (missingVars.length > 0) {
-  console.error('Missing required environment variables:', missingVars);
-  console.error('Available environment variables:', Object.keys(process.env).sort());
-  console.error(`
-Please ensure all required environment variables are set:
-- In development: Create a .env file with the required variables
-- In production: Set the environment variables in your Docker configuration
-Required variables:
-${missingVars.map(v => `- ${v}`).join('\n')}
-`);
-  process.exit(1);
-}
 
 // Log environment configuration (without sensitive values)
 console.log('Environment Configuration:', {
@@ -295,22 +232,8 @@ app.post('/admin/login', express.urlencoded({ extended: true }), (req, res) => {
     return res.status(400).json({ error: 'missing_credentials' });
   }
 
-  // Double check environment variables at login time
-  const envUser = process.env.ADMIN_USER;
-  const envPass = process.env.ADMIN_PASS;
-  
-  console.log('Login - checking environment variables:', {
-    ADMIN_USER: envUser ? 'set' : 'not set',
-    ADMIN_PASS: envPass ? 'set' : 'not set'
-  });
-  
-  if (envUser === undefined || envUser === null || envPass === undefined || envPass === null) {
-    console.error('Admin credentials missing from environment. Available env vars:', Object.keys(process.env));
-    return res.status(500).json({ error: 'server_configuration_error' });
-  }
-
-  console.log('Validating credentials for user:', username);
-  if (username === envUser && password === envPass) {
+  // Check admin credentials
+  if (username === process.env.ADMIN_USER && password === process.env.ADMIN_PASS) {
     console.log('Login successful for user:', username);
     
     // Set cookie with appropriate security settings for production
