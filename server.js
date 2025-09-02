@@ -22,10 +22,10 @@ console.log('Server configuration:', {
 });
 
 let pool = null;
-if (DATABASE_URL) {
+if (process.env.DATABASE_URL) {
   try {
     const dbConfig = {
-      connectionString: DATABASE_URL,
+      connectionString: process.env.DATABASE_URL,
       // Add SSL configuration if needed
       ...(process.env.NODE_ENV === 'production' ? {} : { ssl: false })
     };
