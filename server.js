@@ -7,70 +7,86 @@ const cookieParser = require("cookie-parser");
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ""; // set on Render
 const SESSION_SECRET = process.env.SESSION_SECRET || ADMIN_TOKEN || "change-me";
 const DATABASE_URL = process.env.DATABASE_URL || null;
-const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } }) : null;
+let pool = null;
+if (DATABASE_URL) {
+  pool = new Pool({ connectionString: DATABASE_URL });
+  pool.on('error', (err) => {
+    console.error('Unexpected error on idle client', err);
+    process.exit(-1);
+  });
+  // Test database connection
+  pool.query('SELECT NOW()', (err) => {
+    if (err) {
+      console.error('Error connecting to the database:', err);
+      process.exit(-1);
+    } else {
+      console.log('Successfully connected to the database');
+    }
+  });
+} else {
+  console.warn('No DATABASE_URL provided - running without database');
+}
 
 const app = express();
 app.use(express.json());
 app.use(cookieParser(SESSION_SECRET));
 
-// --- CORS (allow your site to call this endpoint from the browser) ---
+// --- CORS configuration ---
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
   .split(",")
   .map(s => s.trim())
   .filter(Boolean);
 
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  
-  // Always allow the origin in development
-  if (ALLOWED_ORIGINS.length === 0) {
-    res.setHeader("Access-Control-Allow-Origin", origin || "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-    if (req.method === "OPTIONS") return res.status(204).end();
-    return next();
-  }
-  
-  // In production, check if origin is allowed
-  if (origin && ALLOWED_ORIGINS.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-    res.setHeader("Vary", "Origin");
-    if (req.method === "OPTIONS") return res.status(204).end();
-    return next();
-  }
-  
-  // Check if origin matches any experiment URLs
-  const matchesExperiment = async () => {
-    if (!origin) return false;
-    try {
-      const originUrl = new URL(origin);
-      const experiments = pool ? await loadActiveExperimentsFromDB() : experiments;
-      return experiments.some(exp => {
-        try {
-          const baselineHost = new URL(exp.baseline_url).hostname;
-          const testHost = new URL(exp.test_url).hostname;
-          return originUrl.hostname === baselineHost || originUrl.hostname === testHost;
-        } catch (e) {
-          return false;
-        }
-      });
-    } catch (e) {
-      return false;
-    }
-  };
+if (ALLOWED_ORIGINS.length === 0) {
+  console.warn('No ALLOWED_ORIGINS configured - CORS will be disabled');
+}
 
-  matchesExperiment().then(matches => {
+app.use(async (req, res, next) => {
+  const origin = req.headers.origin;
+  if (!origin) return next();
+
+  // In production, strictly check against allowed origins
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS,PATCH,DELETE");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Vary", "Origin");
+    
+    if (req.method === "OPTIONS") {
+      return res.status(204).end();
+    }
+    return next();
+  }
+
+  // Also allow origins that match experiment URLs
+  try {
+    const originUrl = new URL(origin);
+    const experiments = await loadActiveExperimentsFromDB();
+    const matches = experiments.some(exp => {
+      try {
+        const baselineHost = new URL(exp.baseline_url).hostname;
+        const testHost = new URL(exp.test_url).hostname;
+        return originUrl.hostname === baselineHost || originUrl.hostname === testHost;
+      } catch (e) {
+        return false;
+      }
+    });
+
     if (matches) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
       res.setHeader("Access-Control-Allow-Headers", "Content-Type");
       res.setHeader("Vary", "Origin");
     }
-    if (req.method === "OPTIONS") return res.status(204).end();
-    next();
-  }).catch(() => next());
+  } catch (e) {
+    console.error('Error checking experiment origins:', e);
+  }
+
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+  next();
 });
 
 // --- Experiments storage ---
@@ -102,11 +118,25 @@ function matchesSurface(urlStr, exp) {
 }
 
 // --- DB helpers ---
-async function dbQuery(text, params){
-  if (!pool) return { rows: [] };
-  const client = await pool.connect();
-  try { return await client.query(text, params); }
-  finally { client.release(); }
+async function dbQuery(text, params) {
+  if (!pool) {
+    console.warn('Database query attempted but no database connection available');
+    return { rows: [] };
+  }
+  
+  let client;
+  try {
+    client = await pool.connect();
+    const result = await client.query(text, params);
+    return result;
+  } catch (err) {
+    console.error('Database query error:', err.message);
+    console.error('Query:', text);
+    console.error('Parameters:', params);
+    throw err;
+  } finally {
+    if (client) client.release();
+  }
 }
 
 async function loadActiveExperimentsFromDB(){
@@ -148,8 +178,13 @@ app.get('/admin/login', (req, res) => {
 
 app.post('/admin/login', express.urlencoded({ extended: true }), (req, res) => {
   const { username, password } = req.body;
-  // Basic hardcoded auth - we'll replace this with a proper user system later
-  if (username === 'niv' && password === 'NM3103LLK6') {
+  const ADMIN_USER = process.env.ADMIN_USER;
+  const ADMIN_PASS = process.env.ADMIN_PASS;
+  if (!ADMIN_USER || !ADMIN_PASS) {
+    console.error('Admin credentials not configured');
+    return res.status(500).json({ error: 'server_error' });
+  }
+  if (username === ADMIN_USER && password === ADMIN_PASS) {
     res.cookie('admin_session', 'yes', {
       httpOnly: true,
       signed: true,
@@ -331,5 +366,8 @@ app.post("/exp/resolve", async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, '0.0.0.0', () => console.log(`exp resolver up on 0.0.0.0:${PORT}`));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode`);
+  console.log(`Listening on http://0.0.0.0:${PORT}`);
+});
