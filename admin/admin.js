@@ -22,12 +22,9 @@ function showToast(message, type = 'success') {
 // Format date
 function formatDate(dateStr) {
   if (!dateStr) return '—';
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC'
-  }) + ' UTC';
+  const d = new Date(dateStr);
+  // Format to YYYY-MM-DD HH:mm:ss UTC
+  return d.toISOString().slice(0, 19).replace('T', ' ') + ' UTC';
 }
 
 // Initialize datetime inputs with current UTC time on focus
