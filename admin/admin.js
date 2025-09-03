@@ -32,9 +32,19 @@ function formatDate(dateStr) {
 
 // Format date for input
 function formatDateInput(dateStr) {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  const d = dateStr ? new Date(dateStr) : new Date();
+  // Convert to UTC string and slice to get YYYY-MM-DDTHH:mm format
+  return d.toISOString().slice(0, 16);
+}
+
+// Set default datetime inputs to current UTC time
+function setDefaultDateTimeInputs() {
+  const defaultTime = formatDateInput();
+  const startInput = document.getElementById('exp-start');
+  const stopInput = document.getElementById('exp-stop');
+  
+  if (!startInput.value) startInput.value = defaultTime;
+  if (!stopInput.value) stopInput.value = defaultTime;
 }
 
 // Format percentage
@@ -250,8 +260,11 @@ function editExp(id) {
   form.elements.allocation_b.value = exp.allocation_b;
   form.elements.preserve_params.checked = exp.preserve_params;
   form.elements.status.value = exp.status;
+  
+  // Set dates with current UTC time as default
   form.elements.start_at.value = formatDateInput(exp.start_at);
   form.elements.stop_at.value = formatDateInput(exp.stop_at);
+  if (!exp.start_at) setDefaultDateTimeInputs();
   
   // Update split display
   splitOutput.value = formatPercent(exp.allocation_b);
@@ -336,11 +349,12 @@ function updateSystemTime() {
     dateStyle: 'medium', 
     timeStyle: 'long',
     timeZone: 'UTC'
-  }) + ' UTC';
+  });
 }
 
 // Initialize
 splitOutput.value = formatPercent(splitInput.value);
 updateSystemTime();
 setInterval(updateSystemTime, 1000);
+setDefaultDateTimeInputs();
 fetchExperiments();
