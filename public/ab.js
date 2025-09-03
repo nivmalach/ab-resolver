@@ -20,7 +20,7 @@
   const force = urlParams.get('__exp')?.replace('force', '');
 
   // Single API call with existing variant and force parameter
-  fetch('https://ab-resolver.onrender.com/exp/resolve', {
+  fetch('https://ab-resolver.opsotools.com/exp/resolve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
