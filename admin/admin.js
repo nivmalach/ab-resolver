@@ -30,6 +30,18 @@ function formatDate(dateStr) {
   }) + ' UTC';
 }
 
+// Initialize datetime inputs with current UTC time on focus
+function initDateTimeInput(input) {
+  input.addEventListener('focus', function() {
+    if (this.value) return;  // Don't override if already has value
+    const now = new Date();
+    // Round to nearest minute
+    now.setSeconds(0);
+    now.setMilliseconds(0);
+    this.value = now.toISOString().slice(0, 16);
+  });
+}
+
 // Format date for input - convert from UTC to local time for input display
 function formatDateInput(dateStr) {
   if (!dateStr) return '';  // Return empty for no date
@@ -342,6 +354,17 @@ function updateSystemTime() {
     timeZone: 'UTC'
   });
 }
+
+// Initialize datetime inputs
+const startInput = document.getElementById('exp-start');
+const stopInput = document.getElementById('exp-stop');
+const editStartInput = document.getElementById('edit-start');
+const editStopInput = document.getElementById('edit-stop');
+
+initDateTimeInput(startInput);
+initDateTimeInput(stopInput);
+initDateTimeInput(editStartInput);
+initDateTimeInput(editStopInput);
 
 // Initialize
 splitOutput.value = formatPercent(splitInput.value);
