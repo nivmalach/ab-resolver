@@ -25,8 +25,9 @@ function formatDate(dateStr) {
   return new Date(dateStr).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
-    day: 'numeric'
-  });
+    day: 'numeric',
+    timeZone: 'UTC'
+  }) + ' UTC';
 }
 
 // Format date for input
@@ -333,8 +334,9 @@ function updateSystemTime() {
   const now = new Date();
   timeEl.textContent = now.toLocaleString('en-US', { 
     dateStyle: 'medium', 
-    timeStyle: 'long'
-  });
+    timeStyle: 'long',
+    timeZone: 'UTC'
+  }) + ' UTC';
 }
 
 // Initialize
