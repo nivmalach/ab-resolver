@@ -365,8 +365,9 @@ app.post('/experiments', requireAdmin, async (req, res) => {
       b.allocation_b ?? 0.5,
       b.status ?? 'draft',
       b.preserve_params ?? true,
-      b.start_at === '' ? null : b.start_at ?? null,
-      b.stop_at === '' ? null : b.stop_at ?? null
+      // Convert local datetime to UTC with timezone
+      b.start_at === '' ? null : b.start_at ? new Date(b.start_at).toISOString() : null,
+      b.stop_at === '' ? null : b.stop_at ? new Date(b.stop_at).toISOString() : null
     ];
     const { rows } = await dbQuery(q, params);
     res.json(rows[0]);
@@ -390,7 +391,13 @@ app.patch('/experiments/:id', requireAdmin, async (req, res) => {
     const vals = [];
     let idx = 1;
     for (const [k,v] of Object.entries(b)){
-      fields.push(`${k} = $${idx++}`); vals.push(v);
+      // Convert timestamps to UTC
+      let value = v;
+      if ((k === 'start_at' || k === 'stop_at') && v) {
+        value = new Date(v).toISOString();
+      }
+      fields.push(`${k} = $${idx++}`);
+      vals.push(value);
     }
     if (!fields.length) return res.status(400).json({ error: 'no_fields' });
     vals.push(id);
