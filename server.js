@@ -241,7 +241,7 @@ async function findActiveExperimentForUrl(urlStr){
       test_url: e.test_url,
       allocation_b: e.allocation_b != null ? Number(e.allocation_b) : 0.5,
       status: e.status,
-      preserve_params: (e.preserve_params !== false),
+      preserve_params: true,  // Always preserve URL parameters
       start_at: e.start_at,
       stop_at: e.stop_at
     };
@@ -490,7 +490,7 @@ app.post("/exp/resolve", async (req, res) => {
       baseline_url: exp.baseline_url,
       test_url: exp.test_url,
       allocation_b: exp.allocation_b,
-      preserve_params: exp.preserve_params !== false,
+      preserve_params: true,  // Always preserve URL parameters
       variant
     });
   } catch (err) {
