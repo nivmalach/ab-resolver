@@ -224,7 +224,7 @@ document.getElementById('createForm').addEventListener('submit', async (e) => {
   
   // Format data
   data.allocation_b = parseFloat(data.allocation_b);
-  data.preserve_params = data.preserve_params === 'on';
+  data.preserve_params = true;  // Always preserve URL parameters
   
   try {
     const res = await fetch('/experiments', {
@@ -259,7 +259,6 @@ function editExp(id) {
   form.elements.baseline_url.value = exp.baseline_url;
   form.elements.test_url.value = exp.test_url;
   form.elements.allocation_b.value = exp.allocation_b;
-  form.elements.preserve_params.checked = exp.preserve_params;
   form.elements.status.value = exp.status;
   
   // Set dates if they exist
@@ -288,7 +287,7 @@ document.getElementById('editForm').addEventListener('submit', async (e) => {
   
   // Format data
   data.allocation_b = parseFloat(data.allocation_b);
-  data.preserve_params = data.preserve_params === 'on';
+  data.preserve_params = true;  // Always preserve URL parameters
   if (!data.start_at) delete data.start_at;
   if (!data.stop_at) delete data.stop_at;
   
