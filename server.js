@@ -217,7 +217,7 @@ async function loadActiveExperimentsFromDB(){
 
     // Now try the actual query
     const { rows } = await dbQuery(
-      `SELECT id, name, baseline_url, test_url, allocation_b, status, preserve_params, start_at, stop_at
+      `SELECT id, name, baseline_url, test_url, allocation_b, status, start_at, stop_at
          FROM experiments
         WHERE status = 'running'
           AND (start_at IS NULL OR start_at <= NOW())
@@ -353,8 +353,8 @@ app.post('/experiments', requireAdmin, async (req, res) => {
     const b = req.body || {};
     if (!pool) return res.status(501).json({ error: 'db_not_configured' });
     const q = `INSERT INTO experiments
-      (id, name, baseline_url, test_url, allocation_b, status, preserve_params, start_at, stop_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      (id, name, baseline_url, test_url, allocation_b, status, start_at, stop_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
       RETURNING *`;
     // Convert empty strings to null for timestamp fields
     const params = [
@@ -364,7 +364,6 @@ app.post('/experiments', requireAdmin, async (req, res) => {
       b.test_url,
       b.allocation_b ?? 0.5,
       b.status ?? 'draft',
-      b.preserve_params ?? true,
       // Convert local datetime to UTC with timezone
       b.start_at === '' ? null : b.start_at ? new Date(b.start_at).toISOString() : null,
       b.stop_at === '' ? null : b.stop_at ? new Date(b.stop_at).toISOString() : null
