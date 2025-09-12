@@ -6,7 +6,6 @@ CREATE TABLE IF NOT EXISTS experiments (
     test_url TEXT NOT NULL,
     allocation_b FLOAT DEFAULT 0.5,
     status TEXT DEFAULT 'draft',
-    preserve_params BOOLEAN DEFAULT true,
     start_at TIMESTAMP WITH TIME ZONE,
     stop_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
