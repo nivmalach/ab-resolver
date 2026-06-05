@@ -223,6 +223,10 @@ test("admin cookie lasts 30 days", () => {
   assert.equal(adminCookieOptions().maxAge, 30 * 24 * 60 * 60 * 1000);
 });
 
+test("admin cookie uses OAuth-compatible SameSite policy", () => {
+  assert.equal(adminCookieOptions().sameSite, "lax");
+});
+
 test("active admin session is rechecked against database", async () => {
   const sessionToken = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL";
   const sessionId = hashSessionToken(sessionToken);

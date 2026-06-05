@@ -708,7 +708,7 @@ function adminCookieOptions(overrides = {}) {
   return {
     httpOnly: true,
     signed: true,
-    sameSite: IS_PRODUCTION ? "strict" : "lax",
+    sameSite: "lax",
     secure: IS_PRODUCTION,
     path: "/",
     maxAge: ADMIN_SESSION_TTL_MS,
