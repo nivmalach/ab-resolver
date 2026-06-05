@@ -106,7 +106,9 @@ Create an OAuth client in Google Cloud Console:
 
 The production URL is the public domain where this Express resolver is deployed, not the Supabase project URL. If no domain or reverse-proxy route has been configured yet, there is no production URL yet; add the local redirect URI now and add the production redirect URI after choosing the resolver domain.
 
-The dashboard supports creating, editing, starting, stopping, deleting, searching, and previewing experiments. It also includes a Team Members section for owners to add, deactivate, role-change, and delete access without changing environment variables.
+The dashboard supports creating, editing, starting, stopping, deleting, searching, and previewing experiments. It also includes owner-only sections for managing Team Members and Allowed Origins without changing environment variables.
+
+Allowed origins control which website origins may call `/exp/resolve` from a browser. `ALLOWED_ORIGINS` is a bootstrap/fallback setting: when `allowed_origins` is empty, those origins are inserted as active origins. After first deploy, manage this list from the dashboard.
 
 ## API
 
@@ -145,6 +147,6 @@ Admin CRUD routes are cookie-authenticated:
 - Use Google OAuth for admin access and keep `ADMIN_ALLOWED_EMAILS` tight.
 - Run `npm audit --omit=dev` before deploy.
 - Keep `DATABASE_URL`, `GOOGLE_CLIENT_SECRET`, and `SESSION_SECRET` out of frontend code.
-- Configure `ALLOWED_ORIGINS` for every site that will load the resolver.
+- Configure `ALLOWED_ORIGINS` with initial site origins, then manage ongoing changes from the dashboard.
 - Use `/healthz` for health checks.
 - Supabase currently has Row Level Security disabled on the server-managed tables. That is acceptable only if access stays server-side through `DATABASE_URL` and no Supabase anon/service-role key is used in the browser for these tables. To use Supabase client libraries against them later, design policies first, then enable RLS.

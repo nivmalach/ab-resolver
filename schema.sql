@@ -57,6 +57,14 @@ CREATE TABLE IF NOT EXISTS public.access_sessions (
     CONSTRAINT access_sessions_expiry_valid CHECK (expires_at > created_at)
 );
 
+CREATE TABLE IF NOT EXISTS public.allowed_origins (
+    origin TEXT PRIMARY KEY,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT allowed_origins_http_origin CHECK (origin ~* '^https?://[^/]+$')
+);
+
 CREATE INDEX IF NOT EXISTS team_members_active_idx
     ON public.team_members (active, email);
 
@@ -65,6 +73,9 @@ CREATE INDEX IF NOT EXISTS access_sessions_active_lookup_idx
 
 CREATE INDEX IF NOT EXISTS access_sessions_email_idx
     ON public.access_sessions (email, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS allowed_origins_active_idx
+    ON public.allowed_origins (active, origin);
 
 CREATE INDEX IF NOT EXISTS experiments_active_lookup_idx
     ON public.experiments (status, start_at, stop_at);
@@ -92,5 +103,11 @@ CREATE TRIGGER set_team_members_updated_at
 DROP TRIGGER IF EXISTS set_access_sessions_updated_at ON public.access_sessions;
 CREATE TRIGGER set_access_sessions_updated_at
     BEFORE UPDATE ON public.access_sessions
+    FOR EACH ROW
+    EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS set_allowed_origins_updated_at ON public.allowed_origins;
+CREATE TRIGGER set_allowed_origins_updated_at
+    BEFORE UPDATE ON public.allowed_origins
     FOR EACH ROW
     EXECUTE FUNCTION public.set_updated_at();

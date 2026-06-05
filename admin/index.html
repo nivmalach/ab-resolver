@@ -108,6 +108,33 @@
         </div>
       </section>
 
+      <section id="allowed-origins" class="card">
+        <div class="card-header">
+          <h2>Allowed Origins</h2>
+        </div>
+        <div class="card-content">
+          <form id="allowedOriginForm" class="inline-form">
+            <input type="url" name="origin" placeholder="https://example.com" required />
+            <button type="submit" class="button primary">
+              <span class="material-icons">add_link</span>
+              Add Origin
+            </button>
+          </form>
+          <div id="allowedOriginsTable" class="experiments-table compact-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Origin</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="allowedOriginsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       <section id="team-members" class="card">
         <div class="card-header">
           <h2>Team Members</h2>

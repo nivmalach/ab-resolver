@@ -10,6 +10,8 @@ const {
   matchesSurface,
   isAllowedAdminEmail,
   parseEmailList,
+  parseOriginList,
+  validateAllowedOriginPayload,
   validateTeamMemberPayload,
   validateExperimentPayload,
   _internals
@@ -23,6 +25,7 @@ const {
   getGoogleRedirectUri,
   getSafeReturnTo,
   hashSessionToken,
+  normalizeOrigin,
   setMemoryAdminSessions,
   setPool
 } = _internals;
@@ -101,6 +104,30 @@ test("isAllowedAdminEmail checks normalized email membership", () => {
 
   assert.equal(isAllowedAdminEmail("ALICE@example.com", allowlist), true);
   assert.equal(isAllowedAdminEmail("bob@example.com", allowlist), false);
+});
+
+test("parseOriginList normalizes resolver origins", () => {
+  assert.deepEqual(parseOriginList(" https://Example.com/path, http://localhost:3000/admin ,, "), [
+    "https://example.com",
+    "http://localhost:3000"
+  ]);
+});
+
+test("validateAllowedOriginPayload normalizes create payload", () => {
+  const payload = validateAllowedOriginPayload({
+    origin: "https://Example.com/pricing?x=1",
+    active: "false"
+  }, { partial: false });
+
+  assert.deepEqual(payload, {
+    origin: "https://example.com",
+    active: false
+  });
+});
+
+test("normalizeOrigin rejects non-http origins", () => {
+  assert.equal(normalizeOrigin("ftp://example.com"), "");
+  assert.equal(normalizeOrigin("https://user:pass@example.com"), "");
 });
 
 test("buildGoogleAuthUrl includes required OAuth parameters", () => {

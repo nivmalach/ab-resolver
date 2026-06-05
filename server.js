@@ -24,6 +24,7 @@ const EXPERIMENT_PATCH_FIELDS = new Set([
   "stop_at"
 ]);
 const TEAM_MEMBER_PATCH_FIELDS = new Set(["role", "active"]);
+const ALLOWED_ORIGIN_PATCH_FIELDS = new Set(["active"]);
 
 const SESSION_COOKIE = "admin_session";
 const OAUTH_STATE_COOKIE = "admin_oauth_state";
@@ -39,10 +40,7 @@ const ADMIN_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const config = {
   sessionSecret: process.env.SESSION_SECRET || (IS_PRODUCTION ? "" : "dev-session-secret"),
   databaseUrl: process.env.DATABASE_URL,
-  allowedOrigins: (process.env.ALLOWED_ORIGINS || "")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean),
+  allowedOrigins: parseOriginList(process.env.ALLOWED_ORIGINS || ""),
   dbSsl: parseBooleanEnv(process.env.DB_SSL, IS_PRODUCTION || /supabase\.(co|com)/.test(process.env.DATABASE_URL || "")),
   trustProxy: parseBooleanEnv(process.env.TRUST_PROXY, IS_PRODUCTION),
   googleClientId: process.env.GOOGLE_CLIENT_ID,
@@ -56,6 +54,7 @@ validateStartupConfig();
 let pool = createPool(config);
 let experiments = [];
 let memoryAdminSessions = new Map();
+let allowedOriginsCache = { expiresAt: 0, origins: [] };
 
 const app = express();
 if (config.trustProxy) {
@@ -68,18 +67,8 @@ app.use(async (req, res, next) => {
   const origin = req.headers.origin;
   if (!origin) return next();
 
-  if (config.allowedOrigins.includes(origin)) {
-    setCorsHeaders(res, origin, "GET,POST,OPTIONS,PATCH,DELETE", true);
-    if (req.method === "OPTIONS") return res.status(204).end();
-    return next();
-  }
-
   try {
-    const originUrl = new URL(origin);
-    const activeExperiments = await loadActiveExperiments();
-    const matches = activeExperiments.some((exp) => matchesExperimentHost(originUrl, exp));
-
-    if (matches) {
+    if (await isAllowedCorsOrigin(origin)) {
       setCorsHeaders(res, origin, "GET,POST,OPTIONS", false);
     }
   } catch (err) {
@@ -88,6 +77,22 @@ app.use(async (req, res, next) => {
 
   if (req.method === "OPTIONS") return res.status(204).end();
   next();
+});
+
+app.use("/admin", async (req, res, next) => {
+  const origin = req.headers.origin;
+  if (!origin) return next();
+
+  try {
+    const requestOrigin = getRequestOrigin(req);
+    if (origin === requestOrigin) {
+      setCorsHeaders(res, origin, "GET,POST,OPTIONS,PATCH,DELETE", true);
+    }
+    if (req.method === "OPTIONS") return res.status(204).end();
+    return next();
+  } catch (err) {
+    return next(err);
+  }
 });
 
 app.get("/healthz", async (_req, res) => {
@@ -317,6 +322,49 @@ app.delete("/admin/team-members/:email", requireAdminRole("owner"), async (req, 
   }
 });
 
+app.get("/admin/allowed-origins", requireAdminRole("owner"), async (_req, res) => {
+  try {
+    res.json(await listAllowedOrigins());
+  } catch {
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+app.post("/admin/allowed-origins", requireAdminRole("owner"), async (req, res) => {
+  try {
+    const input = validateAllowedOriginPayload(req.body || {}, { partial: false });
+    const created = await createAllowedOrigin(input);
+    res.status(201).json(created);
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.patch("/admin/allowed-origins", requireAdminRole("owner"), async (req, res) => {
+  try {
+    const input = validateAllowedOriginPayload(req.body || {}, { partial: true });
+    if (!input.origin) return res.status(400).json({ error: "missing_field", detail: "origin is required" });
+    const { origin, ...updates } = input;
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "no_fields" });
+
+    const updated = await updateAllowedOrigin(origin, updates);
+    if (!updated) return res.status(404).json({ error: "not_found" });
+    res.json(updated);
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.delete("/admin/allowed-origins", requireAdminRole("owner"), async (req, res) => {
+  try {
+    const origin = validateOrigin(req.query.origin);
+    await deleteAllowedOrigin(origin);
+    res.json({ ok: true });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
 app.use("/admin", async (req, res, next) => {
   if (req.path === "/login" || req.path === "/login.html" || req.path === "/style.css") {
     return adminStatic(req, res, next);
@@ -418,6 +466,13 @@ function parseEmailList(value) {
     .filter(Boolean);
 }
 
+function parseOriginList(value) {
+  return value
+    .split(",")
+    .map((origin) => normalizeOrigin(origin))
+    .filter(Boolean);
+}
+
 function createPool(appConfig) {
   if (!appConfig.databaseUrl) {
     console.warn("DATABASE_URL not configured - using in-memory experiment storage");
@@ -448,14 +503,10 @@ function setCorsHeaders(res, origin, methods, credentials) {
   if (credentials) res.setHeader("Access-Control-Allow-Credentials", "true");
 }
 
-function matchesExperimentHost(originUrl, exp) {
-  try {
-    const baselineHost = new URL(exp.baseline_url).hostname;
-    const testHost = new URL(exp.test_url).hostname;
-    return originUrl.hostname === baselineHost || originUrl.hostname === testHost;
-  } catch {
-    return false;
-  }
+function getRequestOrigin(req) {
+  const proto = firstHeaderValue(req.headers["x-forwarded-proto"]) || req.protocol || "http";
+  const host = firstHeaderValue(req.headers["x-forwarded-host"]) || req.headers.host;
+  return `${proto}://${host}`;
 }
 
 function matchesSurface(urlStr, exp) {
@@ -985,6 +1036,116 @@ async function deleteTeamMember(email) {
   await dbQuery("DELETE FROM team_members WHERE email = $1", [email]);
 }
 
+async function isAllowedCorsOrigin(origin) {
+  const normalizedOrigin = normalizeOrigin(origin);
+  if (!normalizedOrigin) return false;
+  const origins = await getActiveAllowedOrigins();
+  return origins.includes(normalizedOrigin);
+}
+
+async function getActiveAllowedOrigins() {
+  if (!pool) return config.allowedOrigins;
+
+  const now = Date.now();
+  if (allowedOriginsCache.expiresAt > now) return allowedOriginsCache.origins;
+
+  await bootstrapAllowedOriginsIfEmpty();
+  const { rows } = await dbQuery(
+    `SELECT origin
+       FROM allowed_origins
+      WHERE active = TRUE
+      ORDER BY origin`
+  );
+  const origins = rows.map((row) => row.origin);
+  allowedOriginsCache = { expiresAt: now + 30 * 1000, origins };
+  return origins;
+}
+
+function invalidateAllowedOriginsCache() {
+  allowedOriginsCache = { expiresAt: 0, origins: [] };
+}
+
+async function bootstrapAllowedOriginsIfEmpty() {
+  if (!pool || config.allowedOrigins.length === 0) return;
+
+  const { rows } = await dbQuery("SELECT COUNT(*)::int AS count FROM allowed_origins");
+  if ((rows[0] && rows[0].count) > 0) return;
+
+  for (const origin of config.allowedOrigins) {
+    await dbQuery(
+      `INSERT INTO allowed_origins (origin, active)
+       VALUES ($1, TRUE)
+       ON CONFLICT (origin) DO NOTHING`,
+      [origin]
+    );
+  }
+}
+
+async function listAllowedOrigins() {
+  if (!pool) {
+    return config.allowedOrigins.map((origin) => ({
+      origin,
+      active: true
+    }));
+  }
+
+  await bootstrapAllowedOriginsIfEmpty();
+  const { rows } = await dbQuery(
+    `SELECT origin, active, created_at, updated_at
+       FROM allowed_origins
+      ORDER BY active DESC, origin`
+  );
+  return rows;
+}
+
+async function createAllowedOrigin(input) {
+  if (!pool) {
+    throw httpError(501, "database_required", "Allowed origin management requires DATABASE_URL");
+  }
+
+  const { rows } = await dbQuery(
+    `INSERT INTO allowed_origins (origin, active)
+     VALUES ($1, $2)
+     RETURNING origin, active, created_at, updated_at`,
+    [input.origin, input.active]
+  );
+  invalidateAllowedOriginsCache();
+  return rows[0];
+}
+
+async function updateAllowedOrigin(origin, updates) {
+  if (!pool) {
+    throw httpError(501, "database_required", "Allowed origin management requires DATABASE_URL");
+  }
+
+  const fields = [];
+  const values = [];
+  let idx = 1;
+
+  for (const [key, value] of Object.entries(updates)) {
+    fields.push(`${key} = $${idx++}`);
+    values.push(value);
+  }
+
+  values.push(origin);
+  const { rows } = await dbQuery(
+    `UPDATE allowed_origins SET ${fields.join(", ")} WHERE origin = $${idx}
+     RETURNING origin, active, created_at, updated_at`,
+    values
+  );
+  invalidateAllowedOriginsCache();
+  return rows[0] || null;
+}
+
+async function deleteAllowedOrigin(origin) {
+  if (!pool) {
+    throw httpError(501, "database_required", "Allowed origin management requires DATABASE_URL");
+  }
+
+  await dbQuery("DELETE FROM allowed_origins WHERE origin = $1", [origin]);
+  invalidateAllowedOriginsCache();
+}
+
 async function updateStatusRoute(req, res, status) {
   try {
     const updated = await updateExperiment(req.params.id, { status });
@@ -1061,6 +1222,51 @@ function validateTeamMemberPayload(body, { partial }) {
   }
 
   return result;
+}
+
+function validateAllowedOriginPayload(body, { partial }) {
+  const result = {};
+  const keys = Object.keys(body);
+
+  for (const key of keys) {
+    if (!ALLOWED_ORIGIN_PATCH_FIELDS.has(key) && key !== "origin") {
+      throw httpError(400, "invalid_field", `Unsupported field: ${key}`);
+    }
+  }
+
+  if (!partial || body.origin != null) {
+    result.origin = validateOrigin(body.origin);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, "active")) {
+    result.active = validateBoolean(body.active, "active");
+  }
+
+  if (!partial && result.active == null) result.active = true;
+  return result;
+}
+
+function validateOrigin(value) {
+  const origin = normalizeOrigin(value);
+  if (!origin) {
+    throw httpError(400, "invalid_origin", "origin must be a valid HTTP(S) origin");
+  }
+  return origin;
+}
+
+function normalizeOrigin(value) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  try {
+    const parsed = new URL(trimmed);
+    if (!["http:", "https:"].includes(parsed.protocol)) return "";
+    if (parsed.username || parsed.password) return "";
+    return parsed.origin;
+  } catch {
+    return "";
+  }
 }
 
 function validateEmail(value) {
@@ -1189,7 +1395,9 @@ module.exports = {
   isAllowedAdminEmail,
   matchesSurface,
   parseEmailList,
+  parseOriginList,
   validateTeamMemberPayload,
+  validateAllowedOriginPayload,
   validateExperimentPayload,
   _internals: {
     adminCookieOptions,
@@ -1199,6 +1407,7 @@ module.exports = {
     getGoogleRedirectUri,
     getSafeReturnTo,
     hashSessionToken,
+    normalizeOrigin,
     normalizeEmail,
     normalizePath,
     redirectToLogin,

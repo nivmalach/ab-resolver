@@ -1,6 +1,7 @@
 // Admin Dashboard JavaScript
 let experiments = [];
 let teamMembers = [];
+let allowedOrigins = [];
 let currentAdmin = null;
 const accessRoles = ['viewer', 'manager', 'owner'];
 
@@ -347,6 +348,105 @@ function renderTeamMembers() {
   });
 }
 
+function renderAllowedOrigins() {
+  const section = document.getElementById('allowed-origins');
+  if (!canManageTeam()) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+
+  const tbody = document.getElementById('allowedOriginsBody');
+  tbody.textContent = '';
+
+  if (allowedOrigins.length === 0) {
+    const tr = document.createElement('tr');
+    const td = appendText(tr, 'td', 'No allowed origins found');
+    td.colSpan = 3;
+    td.className = 'empty-row';
+    tbody.appendChild(tr);
+    return;
+  }
+
+  allowedOrigins.forEach(originConfig => {
+    const tr = document.createElement('tr');
+    appendText(tr, 'td', originConfig.origin);
+
+    const statusTd = document.createElement('td');
+    const status = document.createElement('span');
+    status.className = `status ${originConfig.active ? 'running' : 'stopped'}`;
+    status.textContent = originConfig.active ? 'active' : 'inactive';
+    statusTd.appendChild(status);
+    tr.appendChild(statusTd);
+
+    const actionsTd = document.createElement('td');
+    const actions = document.createElement('div');
+    actions.className = 'button-group';
+    actions.style.display = 'flex';
+    actions.style.gap = '0.5rem';
+
+    actions.appendChild(createButton(
+      originConfig.active ? 'link_off' : 'add_link',
+      originConfig.active ? 'Deactivate' : 'Activate',
+      originConfig.active ? 'button danger' : 'button primary',
+      () => updateAllowedOrigin(originConfig.origin, { active: !originConfig.active })
+    ));
+    actions.appendChild(createButton('delete', 'Delete', 'button danger', () => deleteAllowedOrigin(originConfig.origin)));
+    actionsTd.appendChild(actions);
+    tr.appendChild(actionsTd);
+
+    tbody.appendChild(tr);
+  });
+}
+
+async function fetchAllowedOrigins() {
+  if (!canManageTeam()) {
+    allowedOrigins = [];
+    renderAllowedOrigins();
+    return;
+  }
+
+  try {
+    const res = await fetch('/admin/allowed-origins');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to load allowed origins'));
+    allowedOrigins = await res.json();
+    if (!Array.isArray(allowedOrigins)) throw new Error('Invalid allowed origins response');
+    renderAllowedOrigins();
+  } catch {
+    showToast('Failed to load allowed origins', 'error');
+  }
+}
+
+async function updateAllowedOrigin(origin, updates) {
+  try {
+    const res = await fetch('/admin/allowed-origins', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ origin, ...updates })
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to update allowed origin'));
+    await fetchAllowedOrigins();
+    showToast('Allowed origin updated');
+  } catch (err) {
+    showToast(err.message || 'Failed to update allowed origin', 'error');
+    await fetchAllowedOrigins();
+  }
+}
+
+async function deleteAllowedOrigin(origin) {
+  if (!confirm(`Delete allowed origin ${origin}?`)) return;
+
+  try {
+    const query = new URLSearchParams({ origin });
+    const res = await fetch(`/admin/allowed-origins?${query.toString()}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to delete allowed origin'));
+    await fetchAllowedOrigins();
+    showToast('Allowed origin deleted');
+  } catch (err) {
+    showToast(err.message || 'Failed to delete allowed origin', 'error');
+  }
+}
+
 async function fetchTeamMembers() {
   if (!canManageTeam()) {
     teamMembers = [];
@@ -483,6 +583,32 @@ document.getElementById('teamMemberForm').addEventListener('submit', async (e) =
   }
 });
 
+document.getElementById('allowedOriginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!canManageTeam()) {
+    showToast('Only owners can manage allowed origins', 'error');
+    return;
+  }
+  const form = e.target;
+  const data = Object.fromEntries(new FormData(form));
+
+  try {
+    const res = await fetch('/admin/allowed-origins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to add allowed origin'));
+
+    form.reset();
+    await fetchAllowedOrigins();
+    showToast('Allowed origin added');
+  } catch (err) {
+    showToast(err.message || 'Failed to add allowed origin', 'error');
+  }
+});
+
 // Edit experiment
 function editExp(id) {
   const exp = experiments.find(e => e.id === id);
@@ -577,6 +703,7 @@ document.getElementById('searchExp').addEventListener('input', (e) => {
 // Handle refresh button
 document.getElementById('refreshBtn').addEventListener('click', () => {
   fetchExperiments();
+  fetchAllowedOrigins();
   fetchTeamMembers();
 });
 
@@ -608,5 +735,5 @@ updateSystemTime();
 setInterval(updateSystemTime, 1000);
 (async function init() {
   await fetchCurrentAdmin();
-  await Promise.all([fetchExperiments(), fetchTeamMembers()]);
+  await Promise.all([fetchExperiments(), fetchAllowedOrigins(), fetchTeamMembers()]);
 })();
