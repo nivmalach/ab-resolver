@@ -1,72 +1,104 @@
 // AB Testing Client Script
 (function() {
-  // Add minimal styles inline to prevent FOUC
+  const script = document.currentScript;
+  const resolverOrigin = script?.dataset?.resolverOrigin || new URL(script?.src || location.href, location.href).origin;
+  const resolverUrl = `${resolverOrigin}/exp/resolve`;
+
   const style = document.createElement('style');
   style.textContent = 'html.ab-hide{opacity:0!important}html:not(.ab-hide){opacity:1!important;transition:opacity .1s}';
   document.head.appendChild(style);
   document.documentElement.classList.add('ab-hide');
 
-  // Get existing variant from cookie
-  const expCookie = document.cookie.split(';')
-    .find(c => c.trim().startsWith('expvar_'));
-  
-  const existingVariant = expCookie ? {
-    id: expCookie.trim().split('=')[0].replace('expvar_', ''),
-    variant: expCookie.trim().split('=')[1]
-  } : null;
-
-  // Get force parameter from URL
   const urlParams = new URLSearchParams(location.search);
   const force = urlParams.get('__exp')?.replace('force', '');
+  const clientId = getOrCreateCookie('ab_cid', createClientId(), 365);
+  const previous = getPreviousAssignment();
 
-  // Single API call with existing variant and force parameter
-  fetch('https://ab-resolver.opsotools.com/exp/resolve', {
+  fetch(resolverUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
+    body: JSON.stringify({
       url: location.href,
-      variant: existingVariant?.variant,
+      cid: clientId,
+      experiment_id: previous?.id,
+      variant: previous?.variant,
       force: force === 'A' || force === 'B' ? force : undefined
     })
   })
   .then(response => response.json())
   .then(exp => {
     if (!exp.active) {
-      document.documentElement.classList.remove('ab-hide');
+      revealPage();
       return;
     }
 
-    // Set/update cookie only if not using force parameter
-    const urlParams = new URLSearchParams(location.search);
     const isForced = urlParams.get('__exp')?.startsWith('force');
-    
     if (!isForced) {
-      const expires = new Date(Date.now() + 90*24*60*60*1000).toUTCString();
-      document.cookie = `expvar_${exp.id}=${exp.variant}; Path=/; Expires=${expires}; SameSite=Lax`;
+      setCookie(`expvar_${exp.id}`, exp.variant, 90);
     }
-    
-    // Handle redirect if needed
-    if (exp.variant === 'B') {
-      const current = location.pathname.replace(/\/$/, '');
-      const baseline = new URL(exp.baseline_url).pathname.replace(/\/$/, '');
-      
-      if (current === baseline) {
-        const test = new URL(exp.test_url);
-        test.search = location.search || '';
-        test.hash = location.hash || '';
-        location.replace(test.toString());
-        return;
-      }
+
+    if (shouldRedirectToTest(exp)) {
+      const test = new URL(exp.test_url);
+      test.search = location.search || '';
+      test.hash = location.hash || '';
+      location.replace(test.toString());
+      return;
     }
-    
-    // Push to dataLayer and unhide
+
     window.dataLayer = window.dataLayer || [];
     window.dataLayer.push({
       event: 'exp_exposure',
       experiment_id: exp.id,
       variant_id: exp.variant
     });
-    document.documentElement.classList.remove('ab-hide');
+    revealPage();
   })
-  .catch(() => document.documentElement.classList.remove('ab-hide'));
+  .catch(revealPage);
+
+  function shouldRedirectToTest(exp) {
+    if (exp.variant !== 'B') return false;
+    const current = location.pathname.replace(/\/$/, '') || '/';
+    const baseline = new URL(exp.baseline_url).pathname.replace(/\/$/, '') || '/';
+    const test = new URL(exp.test_url).pathname.replace(/\/$/, '') || '/';
+    return current === baseline && current !== test;
+  }
+
+  function getPreviousAssignment() {
+    const cookies = document.cookie.split(';').map(cookie => cookie.trim());
+    for (const cookie of cookies) {
+      if (!cookie.startsWith('expvar_')) continue;
+      const index = cookie.indexOf('=');
+      const id = cookie.slice('expvar_'.length, index);
+      const variant = cookie.slice(index + 1);
+      if (variant === 'A' || variant === 'B') return { id, variant };
+    }
+    return null;
+  }
+
+  function getOrCreateCookie(name, fallback, days) {
+    const existing = getCookie(name);
+    if (existing) return existing;
+    setCookie(name, fallback, days);
+    return fallback;
+  }
+
+  function getCookie(name) {
+    const prefix = `${name}=`;
+    const cookie = document.cookie.split(';').map(value => value.trim()).find(value => value.startsWith(prefix));
+    return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : '';
+  }
+
+  function setCookie(name, value, days) {
+    const expires = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toUTCString();
+    document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; Expires=${expires}; SameSite=Lax`;
+  }
+
+  function createClientId() {
+    if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  function revealPage() {
+    document.documentElement.classList.remove('ab-hide');
+  }
 })();

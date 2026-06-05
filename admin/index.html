@@ -107,6 +107,39 @@
           </div>
         </div>
       </section>
+
+      <section id="team-members" class="card">
+        <div class="card-header">
+          <h2>Team Members</h2>
+        </div>
+        <div class="card-content">
+          <form id="teamMemberForm" class="inline-form">
+            <input type="email" name="email" placeholder="member@example.com" required />
+            <select name="role">
+              <option value="manager">Manager</option>
+              <option value="viewer">Viewer</option>
+              <option value="owner">Owner</option>
+            </select>
+            <button type="submit" class="button primary">
+              <span class="material-icons">person_add</span>
+              Add Member
+            </button>
+          </form>
+          <div id="teamMembersTable" class="experiments-table compact-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="teamMembersBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
     </main>
 
     <!-- Edit Modal -->

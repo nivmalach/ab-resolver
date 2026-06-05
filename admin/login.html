@@ -2,17 +2,26 @@
 <html>
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Login</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="login">
   <div class="login-box">
     <h2>AB Resolver Admin</h2>
-    <form method="post" action="/admin/login">
-      <input type="text" name="username" placeholder="Username" required />
-      <input type="password" name="password" placeholder="Password" required />
-      <button type="submit">Login</button>
-    </form>
+    <a class="google-login" href="/admin/login/google">
+      <span class="google-mark" aria-hidden="true">G</span>
+      Continue with Google
+    </a>
   </div>
+  <script>
+    const returnTo = new URLSearchParams(window.location.search).get('return_to');
+    if (returnTo) {
+      const loginLink = document.querySelector('.google-login');
+      const loginUrl = new URL(loginLink.getAttribute('href'), window.location.origin);
+      loginUrl.searchParams.set('return_to', returnTo);
+      loginLink.href = loginUrl.pathname + loginUrl.search;
+    }
+  </script>
 </body>
 </html>

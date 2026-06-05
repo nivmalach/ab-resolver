@@ -1,5 +1,16 @@
 // Admin Dashboard JavaScript
 let experiments = [];
+let teamMembers = [];
+let currentAdmin = null;
+const accessRoles = ['viewer', 'manager', 'owner'];
+
+function canManageExperiments() {
+  return currentAdmin && ['owner', 'manager'].includes(currentAdmin.role);
+}
+
+function canManageTeam() {
+  return currentAdmin && currentAdmin.role === 'owner';
+}
 
 // Generate random ID
 function generateId() {
@@ -53,6 +64,50 @@ function formatPercent(num) {
   return (num * 100).toFixed(0) + '%';
 }
 
+function appendText(parent, tag, text, className) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  el.textContent = text;
+  parent.appendChild(el);
+  return el;
+}
+
+function createIcon(name) {
+  const icon = document.createElement('span');
+  icon.className = 'material-icons';
+  icon.textContent = name;
+  return icon;
+}
+
+function createButton(iconName, title, className, onClick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = className;
+  button.title = title;
+  button.appendChild(createIcon(iconName));
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+async function getErrorMessage(response, fallback) {
+  const payload = await response.json().catch(() => null);
+  if (payload && payload.detail) return payload.detail;
+  if (payload && payload.error) return payload.error;
+  return fallback;
+}
+
+async function fetchCurrentAdmin() {
+  try {
+    const res = await fetch('/admin/me');
+    if (!res.ok) throw new Error('Failed to load current admin');
+    currentAdmin = await res.json();
+    document.getElementById('new-exp').hidden = !canManageExperiments();
+  } catch {
+    currentAdmin = null;
+    document.getElementById('new-exp').hidden = true;
+  }
+}
+
 // Force variant
 async function forceVariant(expId, variant) {
   const exp = experiments.find(e => e.id === expId);
@@ -66,10 +121,8 @@ async function forceVariant(expId, variant) {
 
 // Render experiments table
 function renderTable(exps = experiments) {
-  const tbody = document.getElementById('expTableBody');
-  tbody.innerHTML = '';
-  
   const container = document.getElementById('experimentsTable');
+  const canWrite = canManageExperiments();
   
   if (exps.length === 0) {
     container.innerHTML = '<div class="empty-state">No experiments found</div>';
@@ -95,79 +148,119 @@ function renderTable(exps = experiments) {
       </table>
     `;
   }
+
+  const tbody = document.getElementById('expTableBody');
+  tbody.textContent = '';
   
   exps.forEach(exp => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>
-        <div style="font-weight: 500;">${exp.id}</div>
-        <small style="color: var(--gray-500);">Created ${formatDate(exp.created_at)}</small>
-      </td>
-      <td>${exp.name}</td>
-      <td>
-        <span class="status ${exp.status}">
-          <span class="material-icons" style="font-size: 1rem;">
-            ${exp.status === 'running' ? 'play_arrow' : 
-              exp.status === 'stopped' ? 'stop' : 'pause'}
-          </span>
-          ${exp.status}
-        </span>
-      </td>
-      <td>
-        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-          <a href="#" onclick="forceVariant('${exp.id}', 'A'); return false;" 
-             style="display: flex; align-items: center; gap: 0.25rem; color: var(--gray-700); text-decoration: none;">
-            <span class="material-icons" style="font-size: 1rem;">radio_button_unchecked</span>
-            Baseline
-          </a>
-          <a href="#" onclick="forceVariant('${exp.id}', 'B'); return false;"
-             style="display: flex; align-items: center; gap: 0.25rem; color: var(--gray-700); text-decoration: none;">
-            <span class="material-icons" style="font-size: 1rem;">change_history</span>
-            Test
-          </a>
-        </div>
-      </td>
-      <td>
-        <div style="display: flex; align-items: center; gap: 0.5rem;">
-          <div style="flex: 1; height: 4px; background: var(--gray-200); border-radius: 2px;">
-            <div style="width: ${formatPercent(exp.allocation_b)}; height: 100%; background: var(--primary); border-radius: 2px;"></div>
-          </div>
-          <span style="color: var(--gray-600); font-size: 0.875rem;">${formatPercent(exp.allocation_b)}</span>
-        </div>
-      </td>
-      <td>
-        <div style="display: flex; flex-direction: column; gap: 0.25rem;">
-          <div>
-            <small style="color: var(--gray-500);">Start:</small>
-            ${formatDate(exp.start_at)}
-          </div>
-          <div>
-            <small style="color: var(--gray-500);">End:</small>
-            ${formatDate(exp.stop_at)}
-          </div>
-        </div>
-      </td>
-      <td>
-        <div class="button-group" style="display: flex; gap: 0.5rem;">
-          ${exp.status !== 'running' ? `
-            <button onclick="updateStatus('${exp.id}','running')" class="button primary" title="Start">
-              <span class="material-icons">play_arrow</span>
-            </button>
-          ` : ''}
-          ${exp.status === 'running' ? `
-            <button onclick="updateStatus('${exp.id}','stopped')" class="button danger" title="Stop">
-              <span class="material-icons">stop</span>
-            </button>
-          ` : ''}
-          <button onclick="editExp('${exp.id}')" class="button" style="background: var(--gray-700); color: white;" title="Edit">
-            <span class="material-icons">edit</span>
-          </button>
-          <button onclick="deleteExp('${exp.id}')" class="button danger" title="Delete">
-            <span class="material-icons">delete</span>
-          </button>
-        </div>
-      </td>
-    `;
+
+    const metaTd = document.createElement('td');
+    const idEl = appendText(metaTd, 'div', exp.id);
+    idEl.style.fontWeight = '500';
+    const createdEl = appendText(metaTd, 'small', `Created ${formatDate(exp.created_at)}`);
+    createdEl.style.color = 'var(--gray-500)';
+    tr.appendChild(metaTd);
+
+    appendText(tr, 'td', exp.name);
+
+    const statusTd = document.createElement('td');
+    const status = document.createElement('span');
+    status.className = `status ${exp.status}`;
+    const statusIcon = createIcon(exp.status === 'running' ? 'play_arrow' : exp.status === 'stopped' ? 'stop' : 'pause');
+    statusIcon.style.fontSize = '1rem';
+    status.appendChild(statusIcon);
+    status.appendChild(document.createTextNode(` ${exp.status}`));
+    statusTd.appendChild(status);
+    tr.appendChild(statusTd);
+
+    const urlsTd = document.createElement('td');
+    const urlActions = document.createElement('div');
+    urlActions.style.display = 'flex';
+    urlActions.style.flexDirection = 'column';
+    urlActions.style.gap = '0.5rem';
+    [['A', 'radio_button_unchecked', 'Baseline'], ['B', 'change_history', 'Test']].forEach(([variant, iconName, label]) => {
+      const link = document.createElement('a');
+      link.href = '#';
+      link.style.display = 'flex';
+      link.style.alignItems = 'center';
+      link.style.gap = '0.25rem';
+      link.style.color = 'var(--gray-700)';
+      link.style.textDecoration = 'none';
+      const icon = createIcon(iconName);
+      icon.style.fontSize = '1rem';
+      link.appendChild(icon);
+      link.appendChild(document.createTextNode(label));
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        forceVariant(exp.id, variant);
+      });
+      urlActions.appendChild(link);
+    });
+    urlsTd.appendChild(urlActions);
+    tr.appendChild(urlsTd);
+
+    const splitTd = document.createElement('td');
+    const splitWrap = document.createElement('div');
+    splitWrap.style.display = 'flex';
+    splitWrap.style.alignItems = 'center';
+    splitWrap.style.gap = '0.5rem';
+    const track = document.createElement('div');
+    track.style.flex = '1';
+    track.style.height = '4px';
+    track.style.background = 'var(--gray-200)';
+    track.style.borderRadius = '2px';
+    const fill = document.createElement('div');
+    fill.style.width = formatPercent(exp.allocation_b);
+    fill.style.height = '100%';
+    fill.style.background = 'var(--primary)';
+    fill.style.borderRadius = '2px';
+    track.appendChild(fill);
+    splitWrap.appendChild(track);
+    const splitLabel = appendText(splitWrap, 'span', formatPercent(exp.allocation_b));
+    splitLabel.style.color = 'var(--gray-600)';
+    splitLabel.style.fontSize = '0.875rem';
+    splitTd.appendChild(splitWrap);
+    tr.appendChild(splitTd);
+
+    const datesTd = document.createElement('td');
+    const datesWrap = document.createElement('div');
+    datesWrap.style.display = 'flex';
+    datesWrap.style.flexDirection = 'column';
+    datesWrap.style.gap = '0.25rem';
+    [['Start:', exp.start_at], ['End:', exp.stop_at]].forEach(([label, value]) => {
+      const row = document.createElement('div');
+      const small = appendText(row, 'small', label);
+      small.style.color = 'var(--gray-500)';
+      row.appendChild(document.createTextNode(` ${formatDate(value)}`));
+      datesWrap.appendChild(row);
+    });
+    datesTd.appendChild(datesWrap);
+    tr.appendChild(datesTd);
+
+    const actionsTd = document.createElement('td');
+    const actions = document.createElement('div');
+    actions.className = 'button-group';
+    actions.style.display = 'flex';
+    actions.style.gap = '0.5rem';
+    if (canWrite) {
+      if (exp.status !== 'running') {
+        actions.appendChild(createButton('play_arrow', 'Start', 'button primary', () => updateStatus(exp.id, 'running')));
+      }
+      if (exp.status === 'running') {
+        actions.appendChild(createButton('stop', 'Stop', 'button danger', () => updateStatus(exp.id, 'stopped')));
+      }
+      const editButton = createButton('edit', 'Edit', 'button', () => editExp(exp.id));
+      editButton.style.background = 'var(--gray-700)';
+      editButton.style.color = 'white';
+      actions.appendChild(editButton);
+      actions.appendChild(createButton('delete', 'Delete', 'button danger', () => deleteExp(exp.id)));
+    } else {
+      appendText(actions, 'span', 'View only');
+    }
+    actionsTd.appendChild(actions);
+    tr.appendChild(actionsTd);
+
     tbody.appendChild(tr);
   });
 }
@@ -176,10 +269,128 @@ function renderTable(exps = experiments) {
 async function fetchExperiments() {
   try {
     const res = await fetch('/experiments');
+    if (!res.ok) throw new Error('Failed to load experiments');
     experiments = await res.json();
+    if (!Array.isArray(experiments)) throw new Error('Invalid experiments response');
     renderTable();
   } catch (err) {
     showToast('Failed to load experiments', 'error');
+  }
+}
+
+function renderTeamMembers() {
+  const section = document.getElementById('team-members');
+  if (!canManageTeam()) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+
+  const tbody = document.getElementById('teamMembersBody');
+  tbody.textContent = '';
+
+  if (teamMembers.length === 0) {
+    const tr = document.createElement('tr');
+    const td = appendText(tr, 'td', 'No team members found');
+    td.colSpan = 4;
+    td.className = 'empty-row';
+    tbody.appendChild(tr);
+    return;
+  }
+
+  teamMembers.forEach(user => {
+    const tr = document.createElement('tr');
+    appendText(tr, 'td', user.email);
+
+    const roleTd = document.createElement('td');
+    const roleSelect = document.createElement('select');
+    roleSelect.value = user.role;
+    accessRoles.forEach(role => {
+      const option = document.createElement('option');
+      option.value = role;
+      option.textContent = role;
+      roleSelect.appendChild(option);
+    });
+    roleSelect.addEventListener('change', () => updateTeamMember(user.email, { role: roleSelect.value }));
+    roleTd.appendChild(roleSelect);
+    tr.appendChild(roleTd);
+
+    const statusTd = document.createElement('td');
+    const status = document.createElement('span');
+    status.className = `status ${user.active ? 'running' : 'stopped'}`;
+    status.textContent = user.active ? 'active' : 'inactive';
+    statusTd.appendChild(status);
+    tr.appendChild(statusTd);
+
+    const actionsTd = document.createElement('td');
+    const actions = document.createElement('div');
+    actions.className = 'button-group';
+    actions.style.display = 'flex';
+    actions.style.gap = '0.5rem';
+    const isSelf = currentAdmin && currentAdmin.email === user.email;
+    const toggleButton = createButton(
+      user.active ? 'person_off' : 'person_check',
+      user.active ? 'Deactivate' : 'Activate',
+      user.active ? 'button danger' : 'button primary',
+      () => updateTeamMember(user.email, { active: !user.active })
+    );
+    toggleButton.disabled = isSelf;
+    actions.appendChild(toggleButton);
+
+    const deleteButton = createButton('delete', 'Delete', 'button danger', () => deleteTeamMember(user.email));
+    deleteButton.disabled = isSelf;
+    actions.appendChild(deleteButton);
+    actionsTd.appendChild(actions);
+    tr.appendChild(actionsTd);
+
+    tbody.appendChild(tr);
+  });
+}
+
+async function fetchTeamMembers() {
+  if (!canManageTeam()) {
+    teamMembers = [];
+    renderTeamMembers();
+    return;
+  }
+
+  try {
+    const res = await fetch('/admin/team-members');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to load team members'));
+    teamMembers = await res.json();
+    if (!Array.isArray(teamMembers)) throw new Error('Invalid team members response');
+    renderTeamMembers();
+  } catch {
+    showToast('Failed to load team members', 'error');
+  }
+}
+
+async function updateTeamMember(email, updates) {
+  try {
+    const res = await fetch(`/admin/team-members/${encodeURIComponent(email)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to update team member'));
+    await fetchTeamMembers();
+    showToast('Team member updated');
+  } catch (err) {
+    showToast(err.message || 'Failed to update team member', 'error');
+    await fetchTeamMembers();
+  }
+}
+
+async function deleteTeamMember(email) {
+  if (!confirm(`Delete team member ${email}?`)) return;
+
+  try {
+    const res = await fetch(`/admin/team-members/${encodeURIComponent(email)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to delete team member'));
+    await fetchTeamMembers();
+    showToast('Team member deleted');
+  } catch (err) {
+    showToast(err.message || 'Failed to delete team member', 'error');
   }
 }
 
@@ -216,6 +427,10 @@ async function deleteExp(id) {
 // Handle form submission
 document.getElementById('createForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (!canManageExperiments()) {
+    showToast('This role can view experiments but cannot change them', 'error');
+    return;
+  }
   const form = e.target;
   const data = Object.fromEntries(new FormData(form));
   
@@ -224,7 +439,6 @@ document.getElementById('createForm').addEventListener('submit', async (e) => {
   
   // Format data
   data.allocation_b = parseFloat(data.allocation_b);
-  data.preserve_params = true;  // Always preserve URL parameters
   
   try {
     const res = await fetch('/experiments', {
@@ -240,6 +454,32 @@ document.getElementById('createForm').addEventListener('submit', async (e) => {
     showToast('Experiment created successfully');
   } catch (err) {
     showToast('Failed to create experiment', 'error');
+  }
+});
+
+document.getElementById('teamMemberForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!canManageTeam()) {
+    showToast('Only owners can manage team members', 'error');
+    return;
+  }
+  const form = e.target;
+  const data = Object.fromEntries(new FormData(form));
+
+  try {
+    const res = await fetch('/admin/team-members', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to add team member'));
+
+    form.reset();
+    await fetchTeamMembers();
+    showToast('Team member added');
+  } catch (err) {
+    showToast(err.message || 'Failed to add team member', 'error');
   }
 });
 
@@ -287,9 +527,8 @@ document.getElementById('editForm').addEventListener('submit', async (e) => {
   
   // Format data
   data.allocation_b = parseFloat(data.allocation_b);
-  data.preserve_params = true;  // Always preserve URL parameters
-  if (!data.start_at) delete data.start_at;
-  if (!data.stop_at) delete data.stop_at;
+  if (!data.start_at) data.start_at = null;
+  if (!data.stop_at) data.stop_at = null;
   
   try {
     const res = await fetch(`/experiments/${id}`, {
@@ -338,6 +577,7 @@ document.getElementById('searchExp').addEventListener('input', (e) => {
 // Handle refresh button
 document.getElementById('refreshBtn').addEventListener('click', () => {
   fetchExperiments();
+  fetchTeamMembers();
 });
 
 // Update system time
@@ -366,4 +606,7 @@ initDateTimeInput(editStopInput);
 splitOutput.value = formatPercent(splitInput.value);
 updateSystemTime();
 setInterval(updateSystemTime, 1000);
-fetchExperiments();
+(async function init() {
+  await fetchCurrentAdmin();
+  await Promise.all([fetchExperiments(), fetchTeamMembers()]);
+})();
